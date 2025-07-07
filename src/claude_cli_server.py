@@ -747,29 +747,41 @@ async def reset_session() -> Dict:
 
 @mcp.tool()
 async def set_current_session(session_id: str) -> Dict:
-    """次回のClaude呼び出し時に使用するセッションIDを設定
+    """セッションIDを即座に設定（実行は一瞬で完了）
+    
+    単に内部変数を更新するだけの軽量な処理です。
+    次回のexecute_claude実行時に、指定したセッションIDが使用されます。
     
     Args:
-        session_id: 設定するセッションID
+        session_id: 設定するセッションID（文字列）
         
     Returns:
-        操作結果を含む辞書
+        操作結果を含む辞書（即座に返される）
     """
-    old_session_id = session_manager.before_session_id
-    session_manager.before_session_id = session_id
-    
-    # デバッグログに記録
-    debug_log_path = os.path.join(os.path.dirname(__file__), '..', 'claude_command_debug.log')
-    with open(debug_log_path, 'a') as f:
-        f.write(f"[{datetime.now().isoformat()}] Session manually set: {old_session_id} -> {session_id}\n")
-    
-    return {
-        "tool_name": "set_current_session",
-        "success": True,
-        "message": f"Session ID set to: {session_id}",
-        "old_session_id": old_session_id,
-        "new_session_id": session_id
-    }
+    try:
+        old_session_id = session_manager.before_session_id
+        session_manager.before_session_id = session_id
+        
+        # デバッグログに記録
+        debug_log_path = os.path.join(os.path.dirname(__file__), '..', 'claude_command_debug.log')
+        with open(debug_log_path, 'a') as f:
+            f.write(f"[{datetime.now().isoformat()}] Session manually set: {old_session_id} -> {session_id}\n")
+        
+        return {
+            "tool_name": "set_current_session",
+            "success": True,
+            "message": f"Session ID set to: {session_id}",
+            "old_session_id": old_session_id,
+            "new_session_id": session_id
+        }
+    except Exception as e:
+        return {
+            "tool_name": "set_current_session",
+            "success": False,
+            "error": f"Failed to set session: {str(e)}",
+            "old_session_id": session_manager.before_session_id,
+            "new_session_id": None
+        }
 
 
 # Windows環境用の設定

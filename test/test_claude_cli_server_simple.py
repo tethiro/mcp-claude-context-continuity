@@ -35,7 +35,7 @@ async def test_basic_functionality():
     print("\n2. 基本的な実行テスト:")
     print("   プロンプト: 'What is 2+2?'")
     
-    result = await execute_claude("What is 2+2?", timeout=30)
+    result = await execute_claude("What is 2+2?")
     
     if result["success"]:
         print(f"   ✅ 成功")
@@ -56,7 +56,7 @@ async def test_basic_functionality():
         print("\n4. セッション継続テスト:")
         print("   プロンプト: 'What was my previous question?'")
         
-        result2 = await execute_claude("What was my previous question?", timeout=30)
+        result2 = await execute_claude("What was my previous question?")
         
         if result2["success"]:
             print(f"   ✅ 成功")
