@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "claude-cli-file": {
-      "command": "npx",
-      "args": ["file:/mnt/c/prj/AI/prg/mcp-claude-context-continuity"]
-    }
-  }
-}

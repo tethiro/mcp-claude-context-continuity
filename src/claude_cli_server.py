@@ -149,19 +149,18 @@ async def _execute_claude_command(cmd: List[str]) -> Dict:
     with open(debug_log_path, 'a') as f:
         f.write(f"\n[{datetime.now().isoformat()}] Executing command: {' '.join(cmd)}\n")
     
-    # Windows環境では同期実行を使用
+    # Windows環境では同期実行を使用（パフォーマンス問題のため）
     if platform.system() == "Windows":
+        # Windowsの場合、cmd は ['wsl', '--', '/path/to/claude', ...] の形式
+        # 同期実行の方が安定して高速
         try:
-            # Windows/WSL環境では、標準入力を閉じて対話モードを避ける
-            # エンコーディングエラーを回避するため、errors='replace'を追加
             result = subprocess.run(
                 cmd,
                 capture_output=True,
-                text=True,
                 timeout=DEFAULT_TIMEOUT,
-                stdin=subprocess.DEVNULL,  # 標準入力を閉じる
-                encoding='utf-8',  # 文字エンコーディングを明示的に指定
-                errors='replace'  # デコードエラーを?に置換
+                stdin=subprocess.DEVNULL,
+                encoding='utf-8',
+                errors='replace'
             )
             
             execution_time = time.time() - start_time
@@ -171,14 +170,14 @@ async def _execute_claude_command(cmd: List[str]) -> Dict:
                 f.write(f"[{datetime.now().isoformat()}] Return code: {result.returncode}, Time: {execution_time:.2f}s\n")
             
             if result.returncode != 0:
-                error_msg = result.stderr if result.stderr else "Unknown error"
+                error_msg = result.stderr.strip() if result.stderr else "Unknown error"
                 return {
                     "success": False,
                     "error": f"Command failed with code {result.returncode}: {error_msg}",
                     "execution_time": execution_time
                 }
             
-            # 出力を処理（JSONではない場合もある）
+            # 出力を処理
             output = result.stdout.strip()
             
             # JSON形式かチェック
@@ -223,7 +222,7 @@ async def _execute_claude_command(cmd: List[str]) -> Dict:
                 "execution_time": time.time() - start_time
             }
     
-    # Unix系OSでは非同期実行
+    # Unix系OSでは非同期実行を継続
     else:
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -239,6 +238,10 @@ async def _execute_claude_command(cmd: List[str]) -> Dict:
             )
             
             execution_time = time.time() - start_time
+            
+            # デバッグ: 結果をログに記録
+            with open(debug_log_path, 'a') as f:
+                f.write(f"[{datetime.now().isoformat()}] Return code: {proc.returncode}, Time: {execution_time:.2f}s\n")
             
             if proc.returncode != 0:
                 error_msg = stderr.decode() if stderr else "Unknown error"
@@ -439,7 +442,7 @@ async def execute_claude_with_context(prompt: str, file_path: str) -> Dict:
     # コマンド実行（ファイル内容を標準入力として渡す）
     start_time = time.time()
     
-    # Windows環境では同期実行を使用
+    # Windows環境では同期実行を使用（パフォーマンス問題のため）
     if platform.system() == "Windows":
         try:
             proc = subprocess.Popen(
@@ -675,7 +678,7 @@ async def test_claude_cli() -> Dict:
         else:
             cmd = claude_cmd.copy() + ["--version"]
         
-        # Windows環境では同期実行を使用
+        # Windows環境では同期実行を使用（パフォーマンス問題のため）
         if platform.system() == "Windows":
             try:
                 result = subprocess.run(

@@ -101,9 +101,12 @@ mcp-claude-context-continuity/
 ## 開発時の注意点
 - **Windows環境**: 
   - WSL経由でClaude CLIを実行
-  - `stdin=subprocess.DEVNULL`で対話モードを回避（Windows同期実行時）
-  - `stdin=asyncio.subprocess.DEVNULL`でstdin継承問題を回避（Unix系非同期実行時）
+  - 同期実行（subprocess.run）を使用（非同期版はパフォーマンス問題あり）
+  - `stdin=subprocess.DEVNULL`で対話モードを回避
   - `encoding='utf-8', errors='replace'`でcp932エンコーディング問題に対応
+- **Unix系環境（WSL/Linux/macOS）**:
+  - 非同期実行（asyncio.create_subprocess_exec）を使用
+  - `stdin=asyncio.subprocess.DEVNULL`でstdin継承問題を回避
 - **エラーハンドリング**: 
   - タイムアウト、JSON解析エラー、ファイル読み込みエラーを適切に処理
   - すべてのエラーケースで`tool_name`を含む
@@ -120,6 +123,10 @@ mcp-claude-context-continuity/
   - cp932でサポートされない文字（一部の絵文字、音符記号♫♬など）は使用不可
   - 基本的な日本語、英数字、一般的な記号は問題なし
   - 回避策：「絵文字を使って」のような説明的な指示を使用
+- **Windows環境での非同期実行パフォーマンス**:
+  - asyncio + WSL経由の実行で極端な遅延（10-30倍）が発生
+  - 同期実行（subprocess.run）を使用することで回避
+  - 詳細：`doc/windows_async_performance_issue.md`参照
 
 ## デバッグ時の注意点
 - **難しい問題に遭遇した場合**：
@@ -133,5 +140,5 @@ mcp-claude-context-continuity/
 - Claude CLI 1.0.43
 - Python 3.8+
 - FastMCP 0.8.0
-- 非同期版（claude_cli_server.py）で全7機能動作確認済み
-- 同期版（claude_cli_server_sync.py）は`execute_claude_with_context`未実装
+- Windows環境：同期実行で全7機能動作確認済み
+- Unix系環境：非同期実行で全7機能動作確認済み
