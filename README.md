@@ -184,6 +184,11 @@ Claude CLIの動作確認：
 
 ## トラブルシューティング
 
+### WSL環境での動作確認済み
+- WSL環境でのasyncio stdin継承問題は解決済み（`stdin=asyncio.subprocess.DEVNULL`を追加）
+- Windows、WSL、Linux、macOSで動作確認済み
+- すべての7つのツールが正常に動作することをテスト済み
+
 ### Claude CLIが見つからない場合
 
 1. Claude CLIがインストールされているか確認：

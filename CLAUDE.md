@@ -101,7 +101,8 @@ mcp-claude-context-continuity/
 ## 開発時の注意点
 - **Windows環境**: 
   - WSL経由でClaude CLIを実行
-  - `stdin=subprocess.DEVNULL`で対話モードを回避
+  - `stdin=subprocess.DEVNULL`で対話モードを回避（Windows同期実行時）
+  - `stdin=asyncio.subprocess.DEVNULL`でstdin継承問題を回避（Unix系非同期実行時）
   - `encoding='utf-8', errors='replace'`でcp932エンコーディング問題に対応
 - **エラーハンドリング**: 
   - タイムアウト、JSON解析エラー、ファイル読み込みエラーを適切に処理
@@ -120,8 +121,17 @@ mcp-claude-context-continuity/
   - 基本的な日本語、英数字、一般的な記号は問題なし
   - 回避策：「絵文字を使って」のような説明的な指示を使用
 
+## デバッグ時の注意点
+- **難しい問題に遭遇した場合**：
+  - Geminiに相談することを推奨（`mcp__gemini-cli__geminiChat`ツールを使用）
+  - 特に非同期処理、プロセス間通信、エンコーディング問題など
+  - 例：今回のasyncio stdin継承問題はGeminiの分析により解決
+  - Geminiは1会話しか記憶が続かないため、問題の詳細を一度に説明すること
+
 ## テスト済み環境
 - Windows 11 + WSL2 + Ubuntu
 - Claude CLI 1.0.43
 - Python 3.8+
 - FastMCP 0.8.0
+- 非同期版（claude_cli_server.py）で全7機能動作確認済み
+- 同期版（claude_cli_server_sync.py）は`execute_claude_with_context`未実装
