@@ -79,22 +79,27 @@ python test/test_emoji_prompt.py
 ```
 mcp-claude-context-continuity/
 ├── src/
-│   └── claude_cli_server.py         # メインMCPサーバー実装
+│   └── claude_cli_server.py                 # メインMCPサーバー実装（同期実行統一版）
 ├── test/
 │   ├── test_claude_cli_server_simple.py    # 基本動作テスト
 │   ├── test_mcp_server_debug.py            # ツール直接テスト
 │   ├── test_windows_claude_call.py         # Windows環境テスト
 │   ├── test_windows_claude_debug.py        # Windowsデバッグテスト
-│   ├── test_windows_workaround.py          # Windows回避策テスト
 │   ├── test_emoji_prompt.py                # エンコーディングテスト
+│   ├── unified_test_prompts.txt            # 統合テストプロンプト（両環境対応）
 │   ├── mcp_tools_test_prompts.txt          # テストプロンプト集
 │   ├── encoding_test_prompts.txt           # エンコーディングテスト用
 │   └── encoding_debug_prompts.txt          # cp932デバッグ用
 ├── setting/
 │   ├── claude_cli_mcp_config_windows.json  # Windows設定例
 │   └── claude_cli_mcp_config_wsl.json      # WSL/Unix設定例
+├── doc/
+│   ├── sync_execution_unification.md       # 同期実行統一の記録
+│   ├── windows_async_performance_issue.md  # Windows非同期問題の記録
+│   └── gemini_code_review_20250108.md      # Geminiコードレビュー
 ├── claude_command_debug.log         # コマンド実行ログ
 ├── requirements.txt                 # Python依存関係
+├── CLAUDE.md                        # このファイル
 └── README.md                        # 使用方法
 ```
 
@@ -142,5 +147,18 @@ mcp-claude-context-continuity/
 - Claude CLI 1.0.43
 - Python 3.8+
 - FastMCP 0.8.0
-- Windows環境：同期実行で全7機能動作確認済み
-- Unix系環境：非同期実行で全7機能動作確認済み
+- Windows環境：同期実行で全7機能動作確認済み（平均10秒）
+- WSL環境：同期実行で全7機能動作確認済み（平均10秒）
+- 非同期版からの改善：Windows環境で93%（136秒→10秒）
+
+## パフォーマンス特性
+
+### 実行時間の目安
+- **通常のクエリ**: 8-12秒
+- **複雑なクエリ**: 15-30秒
+- **ファイルコンテキスト付き**: 12-15秒
+- **即時応答（履歴取得等）**: 1秒未満
+
+### 環境別の安定性
+- Windows（WSL経由）: 安定動作、cp932エンコーディング制約あり
+- WSL/Linux/macOS: 安定動作、エンコーディング制約なし
