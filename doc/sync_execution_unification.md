@@ -76,3 +76,32 @@ result = subprocess.run(cmd, ..., **encoding_kwargs)
 ## 今後の課題
 
 特になし。MCPの1対1通信モデルには同期実行が最適。
+
+## 追加の最適化（2025年1月8日）
+
+### コマンド構築ロジックの共通化
+
+Windows版とUnix版でコマンド構築ロジックを共通化しました：
+
+1. **共通メソッドの追加**:
+   - `build_claude_command()`: 通常のClaude実行コマンド構築
+   - `build_claude_version_command()`: --versionコマンド構築
+
+2. **実装の詳細**:
+```python
+def build_claude_command(self, claude_cmd, prompt):
+    base_args = ["--dangerously-skip-permissions", "--output-format", "json"]
+    # --resumeやプロンプトを追加
+    
+    if isinstance(claude_cmd, str):
+        # Unix系: ['/path/to/claude'] + args
+        return [claude_cmd] + base_args
+    else:
+        # Windows: ['wsl', '--', '/path/to/claude'] + args
+        return claude_cmd + base_args
+```
+
+3. **メリット**:
+   - コード重複の削除（約40行削減）
+   - 保守性の向上
+   - Windows/Unix系の違いを1箇所で管理

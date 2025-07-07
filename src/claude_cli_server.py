@@ -33,6 +33,58 @@ class ClaudeSessionManager:
         # 最新100件のみ保持
         if len(self.history) > 100:
             self.history = self.history[-100:]
+    
+    def build_claude_command(self, claude_cmd: Union[str, List[str]], prompt: str, include_resume: bool = True) -> List[str]:
+        """Claude CLIコマンドを構築する共通関数
+        
+        Args:
+            claude_cmd: Claude実行コマンド（文字列またはリスト）
+            prompt: Claudeに送るプロンプト
+            include_resume: --resumeオプションを含めるかどうか
+            
+        Returns:
+            構築されたコマンドリスト
+        """
+        # 基本的な引数を構築
+        base_args = [
+            "--dangerously-skip-permissions",
+            "--output-format", "json"
+        ]
+        
+        # before_session_idがある場合は --resume オプションを追加
+        if include_resume and self.before_session_id is not None:
+            base_args.extend(["--resume", self.before_session_id])
+            # デバッグ: resumeセッションIDをログに記録
+            debug_log_path = os.path.join(os.path.dirname(__file__), '..', 'claude_command_debug.log')
+            with open(debug_log_path, 'a') as f:
+                f.write(f"[{datetime.now().isoformat()}] Using --resume with session_id: {self.before_session_id}\n")
+        
+        # プロンプトを追加
+        base_args.extend(["-p", prompt])
+        
+        # コマンドを構築
+        if isinstance(claude_cmd, str):
+            # Unix系: '/path/to/claude' -> ['/path/to/claude', '--arg1', '--arg2', ...]
+            return [claude_cmd] + base_args
+        else:
+            # Windows: ['wsl', '--', '/path/to/claude'] -> ['wsl', '--', '/path/to/claude', '--arg1', '--arg2', ...]
+            return claude_cmd + base_args
+    
+    def build_claude_version_command(self, claude_cmd: Union[str, List[str]]) -> List[str]:
+        """Claude CLI --versionコマンドを構築する
+        
+        Args:
+            claude_cmd: Claude実行コマンド（文字列またはリスト）
+            
+        Returns:
+            構築されたコマンドリスト
+        """
+        if isinstance(claude_cmd, str):
+            # Unix系: '/path/to/claude' -> ['/path/to/claude', '--version']
+            return [claude_cmd, "--version"]
+        else:
+            # Windows: ['wsl', '--', '/path/to/claude'] -> ['wsl', '--', '/path/to/claude', '--version']
+            return claude_cmd + ["--version"]
             
     async def get_claude_command(self) -> Union[str, List[str]]:
         """Claude実行コマンドを取得（キャッシュ付き）"""
@@ -252,26 +304,8 @@ async def execute_claude(prompt: str) -> Dict:
             "error": str(e)
         }
     
-    # コマンドを構築
-    if isinstance(claude_cmd, str):
-        cmd = [claude_cmd]
-    else:
-        cmd = claude_cmd.copy()
-    
-    cmd.extend([
-        "--dangerously-skip-permissions",
-        "--output-format", "json"
-    ])
-    
-    # before_session_idがある場合は --resume オプションを追加
-    if session_manager.before_session_id is not None:
-        cmd.extend(["--resume", session_manager.before_session_id])
-        # デバッグ: resumeセッションIDをログに記録
-        with open(os.path.join(os.path.dirname(__file__), '..', 'claude_command_debug.log'), 'a') as f:
-            f.write(f"[{datetime.now().isoformat()}] Using --resume with session_id: {session_manager.before_session_id}\n")
-    
-    # プロンプトを追加
-    cmd.extend(["-p", prompt])
+    # コマンドを構築（共通関数を使用）
+    cmd = session_manager.build_claude_command(claude_cmd, prompt)
     
     # コマンド実行
     result = await _execute_claude_command(cmd)
@@ -348,26 +382,8 @@ async def execute_claude_with_context(prompt: str, file_path: str) -> Dict:
             "error": str(e)
         }
     
-    # コマンドを構築
-    if isinstance(claude_cmd, str):
-        cmd = [claude_cmd]
-    else:
-        cmd = claude_cmd.copy()
-    
-    cmd.extend([
-        "--dangerously-skip-permissions",
-        "--output-format", "json"
-    ])
-    
-    # before_session_idがある場合は --resume オプションを追加
-    if session_manager.before_session_id is not None:
-        cmd.extend(["--resume", session_manager.before_session_id])
-        # デバッグ: resumeセッションIDをログに記録
-        with open(os.path.join(os.path.dirname(__file__), '..', 'claude_command_debug.log'), 'a') as f:
-            f.write(f"[{datetime.now().isoformat()}] Using --resume with session_id: {session_manager.before_session_id}\n")
-    
-    # プロンプトを追加
-    cmd.extend(["-p", prompt])
+    # コマンドを構築（共通関数を使用）
+    cmd = session_manager.build_claude_command(claude_cmd, prompt)
     
     # コマンド実行（ファイル内容を標準入力として渡す）
     start_time = time.time()
@@ -536,10 +552,7 @@ async def test_claude_cli() -> Dict:
         claude_cmd = await session_manager.get_claude_command()
         
         # コマンドを構築（--versionオプションで簡単なテスト）
-        if isinstance(claude_cmd, str):
-            cmd = [claude_cmd, "--version"]
-        else:
-            cmd = claude_cmd.copy() + ["--version"]
+        cmd = session_manager.build_claude_version_command(claude_cmd)
         
         # 全環境で同期実行を使用（MCPは1対1通信のため非同期の必要なし）
         try:
