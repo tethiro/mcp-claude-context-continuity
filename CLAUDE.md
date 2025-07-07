@@ -61,6 +61,10 @@ python test/test_emoji_prompt.py
   - 初回: `claude --dangerously-skip-permissions --output-format json -p "質問"`
   - 2回目以降: `claude --dangerously-skip-permissions --output-format json --resume <session_id> -p "質問"`
   - これにより前回の会話内容を記憶した状態で対話が可能
+- **環境別の呼び出し方法（重要）**:
+  - **WSL上のGeminiからClaudeを呼ぶ場合**: 直接実行（`/path/to/claude`）
+  - **Windows上のGeminiからClaudeを呼ぶ場合**: WSL経由（`wsl -- /path/to/claude`）
+  - これはMCPサーバーがWSL上で動作し、Claude CLIもWSL内にインストールされているため
 - **必須オプション**: 
   - `--dangerously-skip-permissions`: 権限確認をスキップ（必須）
   - `--output-format json`: JSON形式で出力（session_id取得のため必須）
@@ -162,3 +166,37 @@ mcp-claude-context-continuity/
 ### 環境別の安定性
 - Windows（WSL経由）: 安定動作、cp932エンコーディング制約あり
 - WSL/Linux/macOS: 安定動作、エンコーディング制約なし
+
+## MCP設定例（Gemini用）
+
+### Windows上のGemini設定
+```json
+{
+  "mcpServers": {
+    "claude-cli-server": {
+      "command": "wsl",
+      "args": [
+        "-e",
+        "python3",
+        "/mnt/c/prj/AI/prg/mcp-claude-context-continuity/src/claude_cli_server.py"
+      ]
+    }
+  }
+}
+```
+
+### WSL上のGemini設定
+```json
+{
+  "mcpServers": {
+    "claude-cli-server": {
+      "command": "python3",
+      "args": [
+        "/mnt/c/prj/AI/prg/mcp-claude-context-continuity/src/claude_cli_server.py"
+      ]
+    }
+  }
+}
+```
+
+**注意**: 両環境とも、MCPサーバー自体はWSL上で動作し、Claude CLIもWSL内にインストールされている必要があります。違いはGeminiからMCPサーバーへの接続方法のみです。

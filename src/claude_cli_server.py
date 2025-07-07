@@ -236,10 +236,20 @@ async def _execute_claude_command(cmd: List[str]) -> Dict:
         # 出力を処理
         output = result.stdout.strip()
         
+        # デバッグ: 生の出力をログに記録（最初の500文字のみ）
+        with open(debug_log_path, 'a') as f:
+            f.write(f"[{datetime.now().isoformat()}] Raw output (first 500 chars): {output[:500]}\n")
+        
         # JSON形式かチェック
         if output.startswith('{'):
             try:
                 response_json = json.loads(output)
+                
+                # デバッグ: JSONの構造をログに記録
+                with open(debug_log_path, 'a') as f:
+                    f.write(f"[{datetime.now().isoformat()}] JSON keys: {list(response_json.keys())}\n")
+                    if "result" in response_json:
+                        f.write(f"[{datetime.now().isoformat()}] Result field: '{response_json['result']}'\n")
                 
                 # session_idがあれば保存
                 if "session_id" in response_json:
@@ -248,10 +258,58 @@ async def _execute_claude_command(cmd: List[str]) -> Dict:
                     with open(debug_log_path, 'a') as f:
                         f.write(f"[{datetime.now().isoformat()}] Session updated: {old_session_id} -> {response_json['session_id']}\n")
                 
+                # resultフィールドの内容を確認
+                result_content = response_json.get("result", "")
+                
+                # resultフィールドの型を確認してログに記録
+                with open(debug_log_path, 'a') as f:
+                    f.write(f"[{datetime.now().isoformat()}] Result type: {type(result_content).__name__}, value: {repr(result_content)[:200]}\n")
+                
+                # resultが文字列でない場合の処理
+                if isinstance(result_content, (list, dict)):
+                    # 配列やオブジェクトの場合はJSON文字列に変換
+                    result_str = json.dumps(result_content, ensure_ascii=False)
+                    with open(debug_log_path, 'a') as f:
+                        f.write(f"[{datetime.now().isoformat()}] INFO: Result is {type(result_content).__name__}, converting to string: {result_str[:200]}\n")
+                elif result_content is None:
+                    # Noneの場合は空文字列にする
+                    result_str = ""
+                    with open(debug_log_path, 'a') as f:
+                        f.write(f"[{datetime.now().isoformat()}] WARNING: Result is None, using empty string\n")
+                else:
+                    # 文字列の場合はそのまま使用
+                    result_str = str(result_content)
+                
+                # 空の応答の場合は警告をログに記録
+                if not result_str:
+                    with open(debug_log_path, 'a') as f:
+                        f.write(f"[{datetime.now().isoformat()}] WARNING: Empty result detected. Full JSON: {json.dumps(response_json, ensure_ascii=False)[:1000]}\n")
+                        # エラーチェック
+                        if response_json.get("is_error", False):
+                            f.write(f"[{datetime.now().isoformat()}] ERROR: is_error=True, subtype={response_json.get('subtype', 'unknown')}\n")
+                        # 実行時間情報
+                        f.write(f"[{datetime.now().isoformat()}] Duration info: duration_ms={response_json.get('duration_ms', 'N/A')}, duration_api_ms={response_json.get('duration_api_ms', 'N/A')}\n")
+                
+                # 実行時間が長い場合も警告
+                if execution_time > 30:
+                    with open(debug_log_path, 'a') as f:
+                        f.write(f"[{datetime.now().isoformat()}] WARNING: Long execution time: {execution_time:.2f}s\n")
+                
+                # 警告メッセージの構築
+                warning = None
+                if not result_str:
+                    if response_json.get("is_error", False):
+                        warning = f"Claude CLI error: subtype={response_json.get('subtype', 'unknown')}"
+                    else:
+                        warning = "Empty response from Claude CLI"
+                elif execution_time > 30:
+                    warning = f"Long execution time: {execution_time:.1f}s"
+                
                 return {
                     "success": True,
-                    "response": response_json.get("result", ""),
-                    "execution_time": execution_time
+                    "response": result_str,
+                    "execution_time": execution_time,
+                    "warning": warning
                 }
                 
             except json.JSONDecodeError:
@@ -420,22 +478,40 @@ async def execute_claude_with_context(prompt: str, file_path: str) -> Dict:
             # 出力を処理（JSONではない場合もある）
             output = stdout.strip()
             
+            # デバッグ: 生の出力をログに記録（最初の500文字のみ）
+            debug_log_path = os.path.join(os.path.dirname(__file__), '..', 'claude_command_debug.log')
+            with open(debug_log_path, 'a') as f:
+                f.write(f"[{datetime.now().isoformat()}] execute_claude_with_context Raw output (first 500 chars): {output[:500]}\n")
+            
             # JSON形式かチェック
             if output.startswith('{'):
                 try:
                     response_json = json.loads(output)
                     
+                    # デバッグ: JSONの構造をログに記録
+                    with open(debug_log_path, 'a') as f:
+                        f.write(f"[{datetime.now().isoformat()}] execute_claude_with_context JSON keys: {list(response_json.keys())}\n")
+                        if "result" in response_json:
+                            f.write(f"[{datetime.now().isoformat()}] execute_claude_with_context Result field: '{response_json['result']}'\n")
+                    
                     # session_idがあれば保存
                     if "session_id" in response_json:
                         old_session_id = session_manager.before_session_id
                         session_manager.before_session_id = response_json["session_id"]
-                        debug_log_path = os.path.join(os.path.dirname(__file__), '..', 'claude_command_debug.log')
                         with open(debug_log_path, 'a') as f:
                             f.write(f"[{datetime.now().isoformat()}] Session updated: {old_session_id} -> {response_json['session_id']}\n")
                     
+                    # resultフィールドの内容を確認
+                    result_content = response_json.get("result", "")
+                    
+                    # 空の応答の場合は警告をログに記録
+                    if not result_content:
+                        with open(debug_log_path, 'a') as f:
+                            f.write(f"[{datetime.now().isoformat()}] WARNING: execute_claude_with_context - Empty result field detected. Full JSON: {json.dumps(response_json)}\n")
+                    
                     result = {
                         "success": True,
-                        "response": response_json.get("result", ""),
+                        "response": result_content,
                         "execution_time": execution_time
                     }
                     
