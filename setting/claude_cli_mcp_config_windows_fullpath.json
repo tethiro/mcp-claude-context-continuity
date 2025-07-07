@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "claude-context-continuity": {
+      "command": "C:\\Python312\\python.exe",
+      "args": [
+        "C:\\prj\\AI\\prg\\mcp-claude-context-continuity\\src\\claude_cli_server.py"
+      ],
+      "env": {
+        "PYTHONPATH": "C:\\prj\\AI\\prg\\mcp-claude-context-continuity\\src"
+      }
+    }
+  }
+}

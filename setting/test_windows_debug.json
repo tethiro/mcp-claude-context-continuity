@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "claude-context-continuity-debug": {
+      "command": "npx",
+      "args": [
+        "--prefix",
+        "C:\\prj\\AI\\prg\\mcp-claude-context-continuity",
+        "@local/claude-context-continuity"
+      ],
+      "env": {
+        "DEBUG": "1"
+      }
+    }
+  }
+}

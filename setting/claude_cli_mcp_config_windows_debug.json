@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "claude-context-continuity-debug": {
+      "command": "python",
+      "args": [
+        "C:\\prj\\AI\\prg\\mcp-claude-context-continuity\\src\\claude_cli_server_debug.py"
+      ]
+    }
+  }
+}

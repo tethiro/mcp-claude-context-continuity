@@ -7,9 +7,13 @@ import os
 import platform
 import glob
 import time
+import subprocess
 from datetime import datetime
 from typing import Dict, List, Optional, Union
 from mcp.server.fastmcp import FastMCP
+
+# 定数
+DEFAULT_TIMEOUT = 30  # デフォルトタイムアウト（秒）
 
 # FastMCPインスタンスの作成
 mcp = FastMCP("claude-cli-server")
@@ -85,17 +89,17 @@ class ClaudeSessionManager:
         return None
     
     async def _find_claude_windows(self) -> Optional[List[str]]:
-        """WindowsでWSL経由のClaude CLIを探す"""
+        """WindowsでWSL経由のClaude CLIを探す（同期版を使用）"""
         # 1. WSL内でbashを起動してwhichコマンドを実行
         try:
-            proc = await asyncio.create_subprocess_exec(
-                "wsl", "--", "bash", "-lc", "which claude",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+            result = subprocess.run(
+                ["wsl", "--", "bash", "-lc", "which claude"],
+                capture_output=True,
+                text=True,
+                timeout=5
             )
-            stdout, _ = await proc.communicate()
-            if proc.returncode == 0 and stdout:
-                path = stdout.decode().strip()
+            if result.returncode == 0 and result.stdout:
+                path = result.stdout.strip()
                 return ["wsl", "--", path]
         except:
             pass
@@ -105,27 +109,26 @@ class ClaudeSessionManager:
         
         # WSL内のユーザー名を取得して動的にパスを生成
         try:
-            proc = await asyncio.create_subprocess_exec(
-                "wsl", "--", "whoami",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+            result = subprocess.run(
+                ["wsl", "--", "whoami"],
+                capture_output=True,
+                text=True,
+                timeout=5
             )
-            stdout, _ = await proc.communicate()
-            if proc.returncode == 0 and stdout:
-                username = stdout.decode().strip()
+            if result.returncode == 0 and result.stdout:
+                username = result.stdout.strip()
                 nvm_paths.append(f"/home/{username}/.nvm/versions/node/v22.17.0/bin/claude")
         except:
             pass
         
         for path in nvm_paths:
             try:
-                proc = await asyncio.create_subprocess_exec(
-                    "wsl", "--", "test", "-x", path,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
+                result = subprocess.run(
+                    ["wsl", "--", "test", "-x", path],
+                    capture_output=True,
+                    timeout=5
                 )
-                await proc.communicate()
-                if proc.returncode == 0:
+                if result.returncode == 0:
                     return ["wsl", "--", path]
             except:
                 pass
@@ -137,71 +140,161 @@ class ClaudeSessionManager:
 session_manager = ClaudeSessionManager()
 
 
-async def _execute_claude_command(cmd: List[str], timeout: int = 300) -> Dict:
+async def _execute_claude_command(cmd: List[str]) -> Dict:
     """Claude CLIコマンドを実行して結果を返す"""
     start_time = time.time()
     
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        
-        stdout, stderr = await asyncio.wait_for(
-            proc.communicate(), 
-            timeout=timeout
-        )
-        
-        execution_time = time.time() - start_time
-        
-        if proc.returncode != 0:
-            error_msg = stderr.decode() if stderr else "Unknown error"
-            return {
-                "success": False,
-                "error": f"Command failed with code {proc.returncode}: {error_msg}",
-                "execution_time": execution_time
-            }
-        
-        # JSON解析
+    # デバッグ: 実行コマンドをログファイルに記録
+    debug_log_path = os.path.join(os.path.dirname(__file__), '..', 'claude_command_debug.log')
+    with open(debug_log_path, 'a') as f:
+        f.write(f"\n[{datetime.now().isoformat()}] Executing command: {' '.join(cmd)}\n")
+    
+    # Windows環境では同期実行を使用
+    if platform.system() == "Windows":
         try:
-            response_json = json.loads(stdout.decode())
+            # Windows/WSL環境では、標準入力を閉じて対話モードを避ける
+            # エンコーディングエラーを回避するため、errors='replace'を追加
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=DEFAULT_TIMEOUT,
+                stdin=subprocess.DEVNULL,  # 標準入力を閉じる
+                encoding='utf-8',  # 文字エンコーディングを明示的に指定
+                errors='replace'  # デコードエラーを?に置換
+            )
             
-            # session_idがあれば保存
-            if "session_id" in response_json:
-                session_manager.before_session_id = response_json["session_id"]
+            execution_time = time.time() - start_time
             
-            # resultフィールドのみを抽出
+            # デバッグ: 結果をログに記録
+            with open(debug_log_path, 'a') as f:
+                f.write(f"[{datetime.now().isoformat()}] Return code: {result.returncode}, Time: {execution_time:.2f}s\n")
+            
+            if result.returncode != 0:
+                error_msg = result.stderr if result.stderr else "Unknown error"
+                return {
+                    "success": False,
+                    "error": f"Command failed with code {result.returncode}: {error_msg}",
+                    "execution_time": execution_time
+                }
+            
+            # 出力を処理（JSONではない場合もある）
+            output = result.stdout.strip()
+            
+            # JSON形式かチェック
+            if output.startswith('{'):
+                try:
+                    response_json = json.loads(output)
+                    
+                    # session_idがあれば保存
+                    if "session_id" in response_json:
+                        old_session_id = session_manager.before_session_id
+                        session_manager.before_session_id = response_json["session_id"]
+                        with open(debug_log_path, 'a') as f:
+                            f.write(f"[{datetime.now().isoformat()}] Session updated: {old_session_id} -> {response_json['session_id']}\n")
+                    
+                    return {
+                        "success": True,
+                        "response": response_json.get("result", ""),
+                        "execution_time": execution_time
+                    }
+                    
+                except json.JSONDecodeError:
+                    # JSONパースに失敗した場合は生の出力を返す
+                    pass
+            
+            # JSON形式でない場合は生の出力を返す
             return {
                 "success": True,
-                "response": response_json.get("result", ""),
+                "response": output,
                 "execution_time": execution_time
             }
-            
-        except json.JSONDecodeError as e:
+                
+        except subprocess.TimeoutExpired:
             return {
                 "success": False,
-                "error": f"JSON parse error: {str(e)}",
-                "raw_output": stdout.decode() if stdout else "",
+                "error": f"Timeout after {DEFAULT_TIMEOUT} seconds",
+                "execution_time": DEFAULT_TIMEOUT
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Unexpected error: {str(e)}",
+                "execution_time": time.time() - start_time
+            }
+    
+    # Unix系OSでは非同期実行
+    else:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(), 
+                timeout=DEFAULT_TIMEOUT
+            )
+            
+            execution_time = time.time() - start_time
+            
+            if proc.returncode != 0:
+                error_msg = stderr.decode() if stderr else "Unknown error"
+                return {
+                    "success": False,
+                    "error": f"Command failed with code {proc.returncode}: {error_msg}",
+                    "execution_time": execution_time
+                }
+            
+            # 出力を処理（JSONではない場合もある）
+            output = stdout.decode().strip() if stdout else ""
+            
+            # JSON形式かチェック
+            if output.startswith('{'):
+                try:
+                    response_json = json.loads(output)
+                    
+                    # session_idがあれば保存
+                    if "session_id" in response_json:
+                        old_session_id = session_manager.before_session_id
+                        session_manager.before_session_id = response_json["session_id"]
+                        with open(debug_log_path, 'a') as f:
+                            f.write(f"[{datetime.now().isoformat()}] Session updated: {old_session_id} -> {response_json['session_id']}\n")
+                    
+                    return {
+                        "success": True,
+                        "response": response_json.get("result", ""),
+                        "execution_time": execution_time
+                    }
+                    
+                except json.JSONDecodeError:
+                    # JSONパースに失敗した場合は生の出力を返す
+                    pass
+            
+            # JSON形式でない場合は生の出力を返す
+            return {
+                "success": True,
+                "response": output,
                 "execution_time": execution_time
             }
-            
-    except asyncio.TimeoutError:
-        return {
-            "success": False,
-            "error": f"Timeout after {timeout} seconds",
-            "execution_time": timeout
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "error": f"Unexpected error: {str(e)}",
-            "execution_time": time.time() - start_time
-        }
+                
+        except asyncio.TimeoutError:
+            return {
+                "success": False,
+                "error": f"Timeout after {DEFAULT_TIMEOUT} seconds",
+                "execution_time": DEFAULT_TIMEOUT
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Unexpected error: {str(e)}",
+                "execution_time": time.time() - start_time
+            }
 
 
 @mcp.tool()
-async def execute_claude(prompt: str, timeout: int = 300) -> Dict:
+async def execute_claude(prompt: str) -> Dict:
     """Claude CLIを実行して結果を返す
     
     Args:
@@ -238,12 +331,15 @@ async def execute_claude(prompt: str, timeout: int = 300) -> Dict:
     # before_session_idがある場合は --resume オプションを追加
     if session_manager.before_session_id is not None:
         cmd.extend(["--resume", session_manager.before_session_id])
+        # デバッグ: resumeセッションIDをログに記録
+        with open(os.path.join(os.path.dirname(__file__), '..', 'claude_command_debug.log'), 'a') as f:
+            f.write(f"[{datetime.now().isoformat()}] Using --resume with session_id: {session_manager.before_session_id}\n")
     
     # プロンプトを追加
     cmd.extend(["-p", prompt])
     
     # コマンド実行
-    result = await _execute_claude_command(cmd, timeout)
+    result = await _execute_claude_command(cmd)
     
     # 完全な返り値を構築
     full_result = {
@@ -262,7 +358,7 @@ async def execute_claude(prompt: str, timeout: int = 300) -> Dict:
 
 
 @mcp.tool()
-async def execute_claude_with_context(prompt: str, file_path: str, timeout: int = 300) -> Dict:
+async def execute_claude_with_context(prompt: str, file_path: str) -> Dict:
     """ファイルコンテキスト付きでClaude CLIを実行
     
     Args:
@@ -325,6 +421,9 @@ async def execute_claude_with_context(prompt: str, file_path: str, timeout: int 
     # before_session_idがある場合は --resume オプションを追加
     if session_manager.before_session_id is not None:
         cmd.extend(["--resume", session_manager.before_session_id])
+        # デバッグ: resumeセッションIDをログに記録
+        with open(os.path.join(os.path.dirname(__file__), '..', 'claude_command_debug.log'), 'a') as f:
+            f.write(f"[{datetime.now().isoformat()}] Using --resume with session_id: {session_manager.before_session_id}\n")
     
     # プロンプトを追加
     cmd.extend(["-p", prompt])
@@ -332,63 +431,139 @@ async def execute_claude_with_context(prompt: str, file_path: str, timeout: int 
     # コマンド実行（ファイル内容を標準入力として渡す）
     start_time = time.time()
     
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        
-        stdout, stderr = await asyncio.wait_for(
-            proc.communicate(input=file_content.encode()), 
-            timeout=timeout
-        )
-        
-        execution_time = time.time() - start_time
-        
-        if proc.returncode != 0:
-            error_msg = stderr.decode() if stderr else "Unknown error"
-            result = {
-                "success": False,
-                "error": f"Command failed with code {proc.returncode}: {error_msg}",
-                "execution_time": execution_time
-            }
-        else:
-            # JSON解析
-            try:
-                response_json = json.loads(stdout.decode())
-                
-                # session_idがあれば保存
-                if "session_id" in response_json:
-                    session_manager.before_session_id = response_json["session_id"]
-                
-                result = {
-                    "success": True,
-                    "response": response_json.get("result", ""),
-                    "execution_time": execution_time
-                }
-                
-            except json.JSONDecodeError as e:
+    # Windows環境では同期実行を使用
+    if platform.system() == "Windows":
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding='utf-8',
+                errors='replace'
+            )
+            
+            stdout, stderr = proc.communicate(input=file_content, timeout=DEFAULT_TIMEOUT)
+            
+            execution_time = time.time() - start_time
+            
+            if proc.returncode != 0:
+                error_msg = stderr if stderr else "Unknown error"
                 result = {
                     "success": False,
-                    "error": f"JSON parse error: {str(e)}",
-                    "raw_output": stdout.decode() if stdout else "",
+                    "error": f"Command failed with code {proc.returncode}: {error_msg}",
                     "execution_time": execution_time
                 }
+            else:
+                # 出力を処理（JSONではない場合もある）
+                output = stdout.strip()
                 
-    except asyncio.TimeoutError:
-        result = {
-            "success": False,
-            "error": f"Timeout after {timeout} seconds",
-            "execution_time": timeout
-        }
-    except Exception as e:
-        result = {
-            "success": False,
-            "error": f"Unexpected error: {str(e)}",
-            "execution_time": time.time() - start_time
-        }
+                # JSON形式かチェック
+                if output.startswith('{'):
+                    try:
+                        response_json = json.loads(output)
+                        
+                        # session_idがあれば保存
+                        if "session_id" in response_json:
+                            session_manager.before_session_id = response_json["session_id"]
+                        
+                        result = {
+                            "success": True,
+                            "response": response_json.get("result", ""),
+                            "execution_time": execution_time
+                        }
+                        
+                    except json.JSONDecodeError:
+                        # JSONパースに失敗した場合は生の出力を返す
+                        result = {
+                            "success": True,
+                            "response": output,
+                            "execution_time": execution_time
+                        }
+                else:
+                    # JSON形式でない場合は生の出力を返す
+                    result = {
+                        "success": True,
+                        "response": output,
+                        "execution_time": execution_time
+                    }
+                    
+        except subprocess.TimeoutExpired:
+            result = {
+                "success": False,
+                "error": f"Timeout after {DEFAULT_TIMEOUT} seconds",
+                "execution_time": DEFAULT_TIMEOUT
+            }
+        except Exception as e:
+            result = {
+                "success": False,
+                "error": f"Unexpected error: {str(e)}",
+                "execution_time": time.time() - start_time
+            }
+    
+    # Unix系OSでは非同期実行
+    else:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(input=file_content.encode()), 
+                timeout=DEFAULT_TIMEOUT
+            )
+            
+            execution_time = time.time() - start_time
+            
+            if proc.returncode != 0:
+                error_msg = stderr.decode() if stderr else "Unknown error"
+                result = {
+                    "success": False,
+                    "error": f"Command failed with code {proc.returncode}: {error_msg}",
+                    "execution_time": execution_time
+                }
+            else:
+                # JSON解析
+                try:
+                    response_json = json.loads(stdout.decode())
+                    
+                    # session_idがあれば保存
+                    if "session_id" in response_json:
+                        old_session_id = session_manager.before_session_id
+                        session_manager.before_session_id = response_json["session_id"]
+                        with open(debug_log_path, 'a') as f:
+                            f.write(f"[{datetime.now().isoformat()}] Session updated: {old_session_id} -> {response_json['session_id']}\n")
+                    
+                    result = {
+                        "success": True,
+                        "response": response_json.get("result", ""),
+                        "execution_time": execution_time
+                    }
+                    
+                except json.JSONDecodeError as e:
+                    result = {
+                        "success": False,
+                        "error": f"JSON parse error: {str(e)}",
+                        "raw_output": stdout.decode() if stdout else "",
+                        "execution_time": execution_time
+                    }
+                    
+        except asyncio.TimeoutError:
+            result = {
+                "success": False,
+                "error": f"Timeout after {DEFAULT_TIMEOUT} seconds",
+                "execution_time": DEFAULT_TIMEOUT
+            }
+        except Exception as e:
+            result = {
+                "success": False,
+                "error": f"Unexpected error: {str(e)}",
+                "execution_time": time.time() - start_time
+            }
     
     # 完全な返り値を構築
     full_result = {
@@ -460,6 +635,126 @@ async def get_current_session() -> Dict:
 
 
 @mcp.tool()
+async def test_claude_cli() -> Dict:
+    """Claude CLIが正しく設定されているかテスト
+    
+    Returns:
+        テスト結果を含む辞書
+    """
+    try:
+        # Claude実行コマンドを取得
+        claude_cmd = await session_manager.get_claude_command()
+        
+        # コマンドを構築（--versionオプションで簡単なテスト）
+        if isinstance(claude_cmd, str):
+            cmd = [claude_cmd, "--version"]
+        else:
+            cmd = claude_cmd.copy() + ["--version"]
+        
+        # Windows環境では同期実行を使用
+        if platform.system() == "Windows":
+            try:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,  # 短いタイムアウト
+                    stdin=subprocess.DEVNULL,
+                    encoding='utf-8',
+                    errors='replace'
+                )
+                
+                if result.returncode == 0:
+                    return {
+                        "success": True,
+                        "command": " ".join(cmd),
+                        "output": result.stdout.strip(),
+                        "message": "Claude CLI found and working!"
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "command": " ".join(cmd),
+                        "error": result.stderr.strip() if result.stderr else "Command failed",
+                        "message": "Claude CLI found but not working properly"
+                    }
+                    
+            except subprocess.TimeoutExpired:
+                return {
+                    "success": False,
+                    "command": " ".join(cmd),
+                    "error": "Timeout",
+                    "message": "Claude CLI command timed out"
+                }
+            except Exception as e:
+                return {
+                    "success": False,
+                    "command": " ".join(cmd),
+                    "error": str(e),
+                    "message": "Error executing Claude CLI"
+                }
+        
+        # Unix系OSでは非同期実行
+        else:
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(), 
+                    timeout=5
+                )
+                
+                if proc.returncode == 0:
+                    return {
+                        "success": True,
+                        "command": " ".join(cmd),
+                        "output": stdout.decode().strip(),
+                        "message": "Claude CLI found and working!"
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "command": " ".join(cmd),
+                        "error": stderr.decode().strip() if stderr else "Command failed",
+                        "message": "Claude CLI found but not working properly"
+                    }
+                    
+            except asyncio.TimeoutError:
+                return {
+                    "success": False,
+                    "command": " ".join(cmd),
+                    "error": "Timeout",
+                    "message": "Claude CLI command timed out"
+                }
+            except Exception as e:
+                return {
+                    "success": False,
+                    "command": " ".join(cmd),
+                    "error": str(e),
+                    "message": "Error executing Claude CLI"
+                }
+                
+    except FileNotFoundError as e:
+        return {
+            "success": False,
+            "command": None,
+            "error": str(e),
+            "message": "Claude CLI not found"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "command": None,
+            "error": str(e),
+            "message": "Unexpected error"
+        }
+
+
+@mcp.tool()
 async def reset_session() -> Dict:
     """セッションをリセット
     
@@ -474,6 +769,12 @@ async def reset_session() -> Dict:
         "message": "Session reset successfully",
         "old_session_id": old_session_id
     }
+
+
+# Windows環境用の設定
+if platform.system() == "Windows":
+    # WindowsでのProactorEventLoopポリシー設定
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 
 # メインエントリーポイント

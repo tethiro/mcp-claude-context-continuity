@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "claude-cli-local": {
+      "command": "npx",
+      "args": ["@local/claude-context-continuity"]
+    }
+  }
+}
