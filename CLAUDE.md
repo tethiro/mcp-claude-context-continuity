@@ -46,12 +46,13 @@ python test/test_emoji_prompt.py
 ## アーキテクチャ
 
 ### コア機能
-7つのMCPツールを提供：
+8つのMCPツールを提供：
 - `execute_claude`: Claude CLIを実行して結果を返す
 - `execute_claude_with_context`: ファイルコンテキスト付きでClaude CLIを実行
 - `get_execution_history`: 実行履歴を取得（デフォルト10件、最大100件）
 - `clear_execution_history`: 実行履歴をクリア
 - `get_current_session`: 現在のセッションIDを取得
+- `set_current_session`: 次回使用するセッションIDを設定
 - `reset_session`: セッションをリセット
 - `test_claude_cli`: Claude CLIの動作確認
 

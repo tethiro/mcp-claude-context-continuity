@@ -192,8 +192,15 @@ class ClaudeSessionManager:
 session_manager = ClaudeSessionManager()
 
 
-async def _execute_claude_command(cmd: List[str]) -> Dict:
-    """Claude CLIコマンドを実行して結果を返す（同期実行で統一）"""
+async def _execute_claude_command(cmd: List[str], retry_count: int = 0) -> Dict:
+    """Claude CLIコマンドを実行して結果を返す（内部は同期実行）
+    
+    MCPのasync関数として定義されているが、内部のCLI実行は同期的に行う。
+    
+    Args:
+        cmd: 実行するコマンド
+        retry_count: 現在のリトライ回数（内部使用）
+    """
     start_time = time.time()
     
     # デバッグ: 実行コマンドをログファイルに記録
@@ -298,18 +305,39 @@ async def _execute_claude_command(cmd: List[str]) -> Dict:
                 # 警告メッセージの構築
                 warning = None
                 if not result_str:
-                    if response_json.get("is_error", False):
-                        warning = f"Claude CLI error: subtype={response_json.get('subtype', 'unknown')}"
+                    subtype = response_json.get("subtype", "unknown")
+                    if response_json.get("is_error", False) or "error" in subtype:
+                        warning = f"Claude CLI error: subtype={subtype}"
+                        # error_during_executionの場合は特別な処理
+                        if subtype == "error_during_execution":
+                            output_tokens = response_json.get("usage", {}).get("output_tokens", 0)
+                            if output_tokens > 0:
+                                warning += f" (generated {output_tokens} tokens but no result returned)"
                     else:
                         warning = "Empty response from Claude CLI"
                 elif execution_time > 30:
                     warning = f"Long execution time: {execution_time:.1f}s"
                 
+                # 空の応答でerror_during_executionの場合の処理
+                is_execution_error = not result_str and response_json.get("subtype") == "error_during_execution"
+                
+                if is_execution_error and retry_count < 1:
+                    # 1回だけリトライ
+                    with open(debug_log_path, 'a') as f:
+                        f.write(f"[{datetime.now().isoformat()}] RETRY: error_during_execution detected, retrying... (attempt {retry_count + 1})\n")
+                    
+                    # 少し待機してからリトライ
+                    time.sleep(2)
+                    
+                    # リトライ実行（再帰呼び出し）
+                    return await _execute_claude_command(cmd, retry_count + 1)
+                
                 return {
-                    "success": True,
+                    "success": not is_execution_error,
                     "response": result_str,
                     "execution_time": execution_time,
-                    "warning": warning
+                    "warning": warning,
+                    "error": "Claude CLI execution error (retried once)" if is_execution_error and retry_count > 0 else "Claude CLI execution error" if is_execution_error else None
                 }
                 
             except json.JSONDecodeError:
@@ -714,6 +742,33 @@ async def reset_session() -> Dict:
         "success": True,
         "message": "Session reset successfully",
         "old_session_id": old_session_id
+    }
+
+
+@mcp.tool()
+async def set_current_session(session_id: str) -> Dict:
+    """次回のClaude呼び出し時に使用するセッションIDを設定
+    
+    Args:
+        session_id: 設定するセッションID
+        
+    Returns:
+        操作結果を含む辞書
+    """
+    old_session_id = session_manager.before_session_id
+    session_manager.before_session_id = session_id
+    
+    # デバッグログに記録
+    debug_log_path = os.path.join(os.path.dirname(__file__), '..', 'claude_command_debug.log')
+    with open(debug_log_path, 'a') as f:
+        f.write(f"[{datetime.now().isoformat()}] Session manually set: {old_session_id} -> {session_id}\n")
+    
+    return {
+        "tool_name": "set_current_session",
+        "success": True,
+        "message": f"Session ID set to: {session_id}",
+        "old_session_id": old_session_id,
+        "new_session_id": session_id
     }
 
 

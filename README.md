@@ -81,7 +81,7 @@ python test/test_mcp_server_debug.py
 
 ## 使用方法
 
-Claude Desktop内で以下のツールが利用可能になります：
+Claude Desktop内で以下の8つのツールが利用可能になります：
 
 ### execute_claude
 基本的なClaude CLI実行。会話の継続性が保たれます：
@@ -116,6 +116,15 @@ Claude Desktop内で以下のツールが利用可能になります：
 ```json
 {
   "tool": "get_current_session"
+}
+```
+
+### set_current_session
+特定のセッションIDを設定して会話を継続：
+```json
+{
+  "tool": "set_current_session",
+  "session_id": "abc123-def456-789"
 }
 ```
 
