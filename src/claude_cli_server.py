@@ -225,7 +225,36 @@ async def _execute_claude_command(cmd: List[str]) -> Dict:
     
     # Unix系OSでは非同期実行
     else:
-        try:
+        # WSL環境の検出
+        is_wsl = False
+        if os.path.exists("/proc/version"):
+            with open("/proc/version", "r") as f:
+                if "microsoft" in f.read().lower():
+                    is_wsl = True
+        
+        # WSL環境では同期実行を使用
+        if is_wsl:
+            try:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=DEFAULT_TIMEOUT,
+                    stdin=subprocess.DEVNULL,
+                    encoding='utf-8',
+                    errors='replace'
+                )
+                
+                stdout = result.stdout.encode() if result.stdout else b""
+                stderr = result.stderr.encode() if result.stderr else b""
+                proc_returncode = result.returncode
+                
+            except subprocess.TimeoutExpired:
+                raise asyncio.TimeoutError()
+            except Exception:
+                raise
+        else:
+            # 通常のLinux/macOSでは非同期実行
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
@@ -236,61 +265,62 @@ async def _execute_claude_command(cmd: List[str]) -> Dict:
                 proc.communicate(), 
                 timeout=DEFAULT_TIMEOUT
             )
-            
-            execution_time = time.time() - start_time
-            
-            if proc.returncode != 0:
-                error_msg = stderr.decode() if stderr else "Unknown error"
-                return {
-                    "success": False,
-                    "error": f"Command failed with code {proc.returncode}: {error_msg}",
-                    "execution_time": execution_time
-                }
-            
-            # 出力を処理（JSONではない場合もある）
-            output = stdout.decode().strip() if stdout else ""
-            
-            # JSON形式かチェック
-            if output.startswith('{'):
-                try:
-                    response_json = json.loads(output)
-                    
-                    # session_idがあれば保存
-                    if "session_id" in response_json:
-                        old_session_id = session_manager.before_session_id
-                        session_manager.before_session_id = response_json["session_id"]
-                        with open(debug_log_path, 'a') as f:
-                            f.write(f"[{datetime.now().isoformat()}] Session updated: {old_session_id} -> {response_json['session_id']}\n")
-                    
-                    return {
-                        "success": True,
-                        "response": response_json.get("result", ""),
-                        "execution_time": execution_time
-                    }
-                    
-                except json.JSONDecodeError:
-                    # JSONパースに失敗した場合は生の出力を返す
-                    pass
-            
-            # JSON形式でない場合は生の出力を返す
+            proc_returncode = proc.returncode
+        
+        execution_time = time.time() - start_time
+        
+        if proc_returncode != 0:
+            error_msg = stderr.decode() if stderr else "Unknown error"
             return {
-                "success": True,
-                "response": output,
+                "success": False,
+                "error": f"Command failed with code {proc_returncode}: {error_msg}",
                 "execution_time": execution_time
             }
+        
+        # 出力を処理（JSONではない場合もある）
+        output = stdout.decode().strip() if stdout else ""
+        
+        # JSON形式かチェック
+        if output.startswith('{'):
+            try:
+                response_json = json.loads(output)
                 
-        except asyncio.TimeoutError:
-            return {
-                "success": False,
-                "error": f"Timeout after {DEFAULT_TIMEOUT} seconds",
-                "execution_time": DEFAULT_TIMEOUT
-            }
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Unexpected error: {str(e)}",
-                "execution_time": time.time() - start_time
-            }
+                # session_idがあれば保存
+                if "session_id" in response_json:
+                    old_session_id = session_manager.before_session_id
+                    session_manager.before_session_id = response_json["session_id"]
+                    with open(debug_log_path, 'a') as f:
+                        f.write(f"[{datetime.now().isoformat()}] Session updated: {old_session_id} -> {response_json['session_id']}\n")
+                
+                return {
+                    "success": True,
+                    "response": response_json.get("result", ""),
+                    "execution_time": execution_time
+                }
+                
+            except json.JSONDecodeError:
+                # JSONパースに失敗した場合は生の出力を返す
+                pass
+        
+        # JSON形式でない場合は生の出力を返す
+        return {
+            "success": True,
+            "response": output,
+            "execution_time": execution_time
+        }
+            
+    except asyncio.TimeoutError:
+        return {
+            "success": False,
+            "error": f"Timeout after {DEFAULT_TIMEOUT} seconds",
+            "execution_time": DEFAULT_TIMEOUT
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"Unexpected error: {str(e)}",
+            "execution_time": time.time() - start_time
+        }
 
 
 @mcp.tool()

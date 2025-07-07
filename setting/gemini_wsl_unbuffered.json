@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "claude-cli-server": {
+      "command": "python3",
+      "args": [
+        "-u",
+        "/mnt/c/prj/AI/prg/mcp-claude-context-continuity/src/claude_cli_server.py"
+      ],
+      "env": {
+        "PYTHONUNBUFFERED": "1"
+      }
+    }
+  }
+}

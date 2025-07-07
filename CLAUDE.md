@@ -29,11 +29,18 @@ wsl -e python3 /mnt/c/prj/AI/prg/mcp-claude-context-continuity/src/claude_cli_se
 
 ### テストの実行
 ```bash
-# Claude CLI探索テスト
-python test/test_find_claude.py
-
-# MCPサーバー動作テスト
+# 基本的な動作テスト
 python test/test_claude_cli_server_simple.py
+
+# MCPサーバーデバッグテスト（ツール直接実行）
+python test/test_mcp_server_debug.py
+
+# Windows環境テスト
+python test/test_windows_claude_call.py
+python test/test_windows_claude_debug.py
+
+# エンコーディングテスト
+python test/test_emoji_prompt.py
 ```
 
 ## アーキテクチャ
@@ -42,11 +49,11 @@ python test/test_claude_cli_server_simple.py
 7つのMCPツールを提供：
 - `execute_claude`: Claude CLIを実行して結果を返す
 - `execute_claude_with_context`: ファイルコンテキスト付きでClaude CLIを実行
-- `get_execution_history`: 実行履歴を取得（最新10件）
+- `get_execution_history`: 実行履歴を取得（デフォルト10件、最大100件）
 - `clear_execution_history`: 実行履歴をクリア
 - `get_current_session`: 現在のセッションIDを取得
 - `reset_session`: セッションをリセット
-- `test_claude_cli`: Claude CLIの動作確認（デバッグ用）
+- `test_claude_cli`: Claude CLIの動作確認
 
 ### 重要な仕様
 - **セッション継続機能（最重要）**: 
@@ -58,53 +65,63 @@ python test/test_claude_cli_server_simple.py
   - `--dangerously-skip-permissions`: 権限確認をスキップ（必須）
   - `--output-format json`: JSON形式で出力（session_id取得のため必須）
 - **タイムアウト**: 
-  - DEFAULT_TIMEOUT = 30秒（実装）
-  - 仕様書では300秒だが、現在の実装は30秒に設定
+  - DEFAULT_TIMEOUT = 300秒
+- **エンコーディング対応**:
+  - `encoding='utf-8', errors='replace'`により、Windows環境でのcp932エンコーディング問題に対応
+  - 絵文字や特殊文字は環境により制限あり
 - **制約事項**:
   - 並列実行は不可（--resumeによるセッション継続性を保つため）
   - 履歴は最新100件まで保持（メモリ内のみ）
 - **クロスプラットフォーム**: Windows（WSL経由）、Linux、macOS対応
+- **返り値の一貫性**: すべてのツールが`tool_name`フィールドを含む
 
 ### ファイル構造
 ```
 mcp-claude-context-continuity/
 ├── src/
-│   ├── claude_cli_server.py         # メインMCPサーバー実装
-│   ├── claude_cli_server_debug.py   # デバッグ版
-│   ├── claude_cli_server_windows_fix.py  # Windows対応テスト版（非推奨）
-│   └── minimal_mcp_server.py        # 最小限のテストサーバー
+│   └── claude_cli_server.py         # メインMCPサーバー実装
 ├── test/
-│   ├── test_find_claude.py          # Claude CLI探索テスト
-│   ├── test_claude_cli_server_simple.py  # 動作テスト
-│   └── test_mcp_stdio.py            # MCP通信テスト
+│   ├── test_claude_cli_server_simple.py    # 基本動作テスト
+│   ├── test_mcp_server_debug.py            # ツール直接テスト
+│   ├── test_windows_claude_call.py         # Windows環境テスト
+│   ├── test_windows_claude_debug.py        # Windowsデバッグテスト
+│   ├── test_windows_workaround.py          # Windows回避策テスト
+│   ├── test_emoji_prompt.py                # エンコーディングテスト
+│   ├── mcp_tools_test_prompts.txt          # テストプロンプト集
+│   ├── encoding_test_prompts.txt           # エンコーディングテスト用
+│   └── encoding_debug_prompts.txt          # cp932デバッグ用
 ├── setting/
 │   ├── claude_cli_mcp_config_windows.json  # Windows設定例
 │   └── claude_cli_mcp_config_wsl.json      # WSL/Unix設定例
-├── doc/
-│   └── claude_cli_mcp_server_specification.md  # 詳細仕様書
-├── requirements.txt                  # Python依存関係
-├── package.json                      # npm package設定
-└── README.md                         # 使用方法
+├── claude_command_debug.log         # コマンド実行ログ
+├── requirements.txt                 # Python依存関係
+└── README.md                        # 使用方法
 ```
 
 ## 開発時の注意点
-- **Windows環境**: WSL経由でClaude CLIを実行するため、`subprocess.run()`にstdin=subprocess.DEVNULLを指定
-- **エラーハンドリング**: タイムアウト、JSON解析エラー、ファイル読み込みエラーを適切に処理
-- **デバッグ**: `claude_command_debug.log`にコマンド実行ログを記録
-- **セッション管理**: ClaudeSessionManagerクラスでsession_idを永続的に保持
+- **Windows環境**: 
+  - WSL経由でClaude CLIを実行
+  - `stdin=subprocess.DEVNULL`で対話モードを回避
+  - `encoding='utf-8', errors='replace'`でcp932エンコーディング問題に対応
+- **エラーハンドリング**: 
+  - タイムアウト、JSON解析エラー、ファイル読み込みエラーを適切に処理
+  - すべてのエラーケースで`tool_name`を含む
+- **デバッグ**: 
+  - `claude_command_debug.log`にコマンド実行ログを記録
+  - セッションID更新も記録
+- **セッション管理**: ClaudeSessionManagerクラスでsession_idをメモリ内に保持
 - **Claude CLI探索**: 
-  - Unix系: which, 一般的なパス、環境変数の順で探索
-  - Windows: WSL内のbash -lcでPATHを適切に設定して探索
+  - Unix系: which → 一般的なパス → 環境変数の順で探索
+  - Windows: WSL内でwhich → nvmパスの順で探索
 
-## 現在の問題点
-- **Windows環境でのタイムアウト問題**: 
-  - WSL経由でClaude CLIを実行すると30秒でタイムアウトする
-  - `stdin=subprocess.DEVNULL`を指定しても解決していない
-  - 実行コマンドは`claude_command_debug.log`で確認可能
+## 既知の制限事項
+- **Windows環境での文字エンコーディング**:
+  - cp932でサポートされない文字（一部の絵文字、音符記号♫♬など）は使用不可
+  - 基本的な日本語、英数字、一般的な記号は問題なし
+  - 回避策：「絵文字を使って」のような説明的な指示を使用
 
-## 今後の課題
-- Windows環境でのタイムアウト問題の根本的解決
-- npmパッケージとしての公開準備（@local/claude-context-continuity）
-- 実行履歴の永続化（現在はメモリ内のみ）
-- タイムアウト値の統一（実装:30秒 vs 仕様書:300秒）
-- Claude CLI探索結果の永続キャッシュ
+## テスト済み環境
+- Windows 11 + WSL2 + Ubuntu
+- Claude CLI 1.0.43
+- Python 3.8+
+- FastMCP 0.8.0
