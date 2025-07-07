@@ -99,14 +99,16 @@ mcp-claude-context-continuity/
 ```
 
 ## 開発時の注意点
-- **Windows環境**: 
-  - WSL経由でClaude CLIを実行
-  - 同期実行（subprocess.run）を使用（非同期版はパフォーマンス問題あり）
+- **全環境共通**:
+  - 同期実行（subprocess.run）で統一
+  - MCPは1対1通信のため非同期処理は不要
   - `stdin=subprocess.DEVNULL`で対話モードを回避
+- **Windows環境**: 
+  - WSL経由でClaude CLIを実行（`['wsl', '--', '/path/to/claude']`）
   - `encoding='utf-8', errors='replace'`でcp932エンコーディング問題に対応
 - **Unix系環境（WSL/Linux/macOS）**:
-  - 非同期実行（asyncio.create_subprocess_exec）を使用
-  - `stdin=asyncio.subprocess.DEVNULL`でstdin継承問題を回避
+  - Claude CLIを直接実行（`['/path/to/claude']`）
+  - `encoding='utf-8'`を使用
 - **エラーハンドリング**: 
   - タイムアウト、JSON解析エラー、ファイル読み込みエラーを適切に処理
   - すべてのエラーケースで`tool_name`を含む

@@ -184,8 +184,9 @@ Claude CLIの動作確認：
 
 ## トラブルシューティング
 
-### WSL環境での動作確認済み
-- WSL環境でのasyncio stdin継承問題は解決済み（`stdin=asyncio.subprocess.DEVNULL`を追加）
+### 実装の特徴
+- 全環境で同期実行（subprocess.run）を使用
+- MCPの1対1通信モデルに最適化
 - Windows、WSL、Linux、macOSで動作確認済み
 - すべての7つのツールが正常に動作することをテスト済み
 
