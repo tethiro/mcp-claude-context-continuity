@@ -13,7 +13,7 @@ from typing import Dict, List, Optional, Union
 from mcp.server.fastmcp import FastMCP
 
 # 定数
-DEFAULT_TIMEOUT = 30  # デフォルトタイムアウト（秒）
+DEFAULT_TIMEOUT = 300  # デフォルトタイムアウト（秒）
 
 # FastMCPインスタンスの作成
 mcp = FastMCP("claude-cli-server")
@@ -309,6 +309,7 @@ async def execute_claude(prompt: str) -> Dict:
         claude_cmd = await session_manager.get_claude_command()
     except FileNotFoundError as e:
         return {
+            "tool_name": "execute_claude_with_context",
             "success": False,
             "prompt": prompt,
             "response": None,
@@ -343,6 +344,7 @@ async def execute_claude(prompt: str) -> Dict:
     
     # 完全な返り値を構築
     full_result = {
+        "tool_name": "execute_claude",
         "success": result["success"],
         "prompt": prompt,
         "response": result.get("response"),
@@ -361,10 +363,12 @@ async def execute_claude(prompt: str) -> Dict:
 async def execute_claude_with_context(prompt: str, file_path: str) -> Dict:
     """ファイルコンテキスト付きでClaude CLIを実行
     
+    ファイルの内容を読み込んで、その内容についてClaudeに質問できます。
+    例: README.mdについて質問する、コードファイルの説明を求める等
+    
     Args:
-        prompt: Claudeに送るプロンプト
-        file_path: コンテキストとして使用するファイルのパス
-        timeout: タイムアウト時間（秒）
+        prompt: Claudeに送るプロンプト（例: "このファイルの目的を説明して"）
+        file_path: コンテキストとして使用するファイルのパス（例: "README.md"）
         
     Returns:
         実行結果を含む辞書
@@ -372,6 +376,7 @@ async def execute_claude_with_context(prompt: str, file_path: str) -> Dict:
     # ファイルの存在確認
     if not os.path.exists(file_path):
         return {
+            "tool_name": "execute_claude_with_context",
             "success": False,
             "prompt": prompt,
             "response": None,
@@ -386,6 +391,7 @@ async def execute_claude_with_context(prompt: str, file_path: str) -> Dict:
             file_content = f.read()
     except Exception as e:
         return {
+            "tool_name": "execute_claude_with_context",
             "success": False,
             "prompt": prompt,
             "response": None,
@@ -399,6 +405,7 @@ async def execute_claude_with_context(prompt: str, file_path: str) -> Dict:
         claude_cmd = await session_manager.get_claude_command()
     except FileNotFoundError as e:
         return {
+            "tool_name": "execute_claude_with_context",
             "success": False,
             "prompt": prompt,
             "response": None,
@@ -527,28 +534,40 @@ async def execute_claude_with_context(prompt: str, file_path: str) -> Dict:
                     "execution_time": execution_time
                 }
             else:
-                # JSON解析
-                try:
-                    response_json = json.loads(stdout.decode())
-                    
-                    # session_idがあれば保存
-                    if "session_id" in response_json:
-                        old_session_id = session_manager.before_session_id
-                        session_manager.before_session_id = response_json["session_id"]
-                        with open(debug_log_path, 'a') as f:
-                            f.write(f"[{datetime.now().isoformat()}] Session updated: {old_session_id} -> {response_json['session_id']}\n")
-                    
+                # 出力を処理（JSONではない場合もある）
+                output = stdout.decode().strip() if stdout else ""
+                
+                # JSON形式かチェック
+                if output.startswith('{'):
+                    try:
+                        response_json = json.loads(output)
+                        
+                        # session_idがあれば保存
+                        if "session_id" in response_json:
+                            old_session_id = session_manager.before_session_id
+                            session_manager.before_session_id = response_json["session_id"]
+                            debug_log_path = os.path.join(os.path.dirname(__file__), '..', 'claude_command_debug.log')
+                            with open(debug_log_path, 'a') as f:
+                                f.write(f"[{datetime.now().isoformat()}] Session updated: {old_session_id} -> {response_json['session_id']}\n")
+                        
+                        result = {
+                            "success": True,
+                            "response": response_json.get("result", ""),
+                            "execution_time": execution_time
+                        }
+                        
+                    except json.JSONDecodeError:
+                        # JSONパースに失敗した場合は生の出力を返す
+                        result = {
+                            "success": True,
+                            "response": output,
+                            "execution_time": execution_time
+                        }
+                else:
+                    # JSON形式でない場合は生の出力を返す
                     result = {
                         "success": True,
-                        "response": response_json.get("result", ""),
-                        "execution_time": execution_time
-                    }
-                    
-                except json.JSONDecodeError as e:
-                    result = {
-                        "success": False,
-                        "error": f"JSON parse error: {str(e)}",
-                        "raw_output": stdout.decode() if stdout else "",
+                        "response": output,
                         "execution_time": execution_time
                     }
                     
@@ -567,6 +586,7 @@ async def execute_claude_with_context(prompt: str, file_path: str) -> Dict:
     
     # 完全な返り値を構築
     full_result = {
+        "tool_name": "execute_claude_with_context",
         "success": result["success"],
         "prompt": prompt,
         "response": result.get("response"),
@@ -596,6 +616,7 @@ async def get_execution_history(limit: int = 10) -> Dict:
     history_slice = session_manager.history[-limit:] if limit > 0 else session_manager.history
     
     return {
+        "tool_name": "get_execution_history",
         "success": True,
         "history": history_slice,
         "total_entries": len(session_manager.history),
@@ -614,6 +635,7 @@ async def clear_execution_history() -> Dict:
     session_manager.history = []
     
     return {
+        "tool_name": "clear_execution_history",
         "success": True,
         "message": f"Cleared {cleared_count} history entries",
         "cleared_count": cleared_count
@@ -628,6 +650,7 @@ async def get_current_session() -> Dict:
         セッション情報を含む辞書
     """
     return {
+        "tool_name": "get_current_session",
         "success": True,
         "session_id": session_manager.before_session_id,
         "has_session": session_manager.before_session_id is not None
@@ -666,6 +689,7 @@ async def test_claude_cli() -> Dict:
                 
                 if result.returncode == 0:
                     return {
+                        "tool_name": "test_claude_cli",
                         "success": True,
                         "command": " ".join(cmd),
                         "output": result.stdout.strip(),
@@ -673,6 +697,7 @@ async def test_claude_cli() -> Dict:
                     }
                 else:
                     return {
+                        "tool_name": "test_claude_cli",
                         "success": False,
                         "command": " ".join(cmd),
                         "error": result.stderr.strip() if result.stderr else "Command failed",
@@ -681,6 +706,7 @@ async def test_claude_cli() -> Dict:
                     
             except subprocess.TimeoutExpired:
                 return {
+                    "tool_name": "test_claude_cli",
                     "success": False,
                     "command": " ".join(cmd),
                     "error": "Timeout",
@@ -688,6 +714,7 @@ async def test_claude_cli() -> Dict:
                 }
             except Exception as e:
                 return {
+                    "tool_name": "test_claude_cli",
                     "success": False,
                     "command": " ".join(cmd),
                     "error": str(e),
@@ -710,6 +737,7 @@ async def test_claude_cli() -> Dict:
                 
                 if proc.returncode == 0:
                     return {
+                        "tool_name": "test_claude_cli",
                         "success": True,
                         "command": " ".join(cmd),
                         "output": stdout.decode().strip(),
@@ -717,6 +745,7 @@ async def test_claude_cli() -> Dict:
                     }
                 else:
                     return {
+                        "tool_name": "test_claude_cli",
                         "success": False,
                         "command": " ".join(cmd),
                         "error": stderr.decode().strip() if stderr else "Command failed",
@@ -725,6 +754,7 @@ async def test_claude_cli() -> Dict:
                     
             except asyncio.TimeoutError:
                 return {
+                    "tool_name": "test_claude_cli",
                     "success": False,
                     "command": " ".join(cmd),
                     "error": "Timeout",
@@ -732,6 +762,7 @@ async def test_claude_cli() -> Dict:
                 }
             except Exception as e:
                 return {
+                    "tool_name": "test_claude_cli",
                     "success": False,
                     "command": " ".join(cmd),
                     "error": str(e),
@@ -740,6 +771,7 @@ async def test_claude_cli() -> Dict:
                 
     except FileNotFoundError as e:
         return {
+            "tool_name": "test_claude_cli",
             "success": False,
             "command": None,
             "error": str(e),
@@ -747,6 +779,7 @@ async def test_claude_cli() -> Dict:
         }
     except Exception as e:
         return {
+            "tool_name": "test_claude_cli",
             "success": False,
             "command": None,
             "error": str(e),
@@ -765,6 +798,7 @@ async def reset_session() -> Dict:
     session_manager.before_session_id = None
     
     return {
+        "tool_name": "reset_session",
         "success": True,
         "message": "Session reset successfully",
         "old_session_id": old_session_id
