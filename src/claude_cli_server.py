@@ -35,6 +35,30 @@ class ClaudeSessionManager:
         if len(self.history) > 100:
             self.history = self.history[-100:]
     
+    def sanitize_prompt_for_cp932(self, prompt: str) -> str:
+        """cp932でエンコードできない文字を置換
+        
+        Args:
+            prompt: 元のプロンプト
+            
+        Returns:
+            cp932互換のプロンプト
+        """
+        try:
+            # cp932でエンコードを試みる
+            prompt.encode('cp932')
+            return prompt  # 問題なければそのまま返す
+        except UnicodeEncodeError as e:
+            # エラーが出た文字を '?' に置換
+            result = list(prompt)
+            result[e.start] = '?'
+            # デバッグログ
+            debug_log_path = os.path.join(os.path.dirname(__file__), '..', 'claude_command_debug.log')
+            with open(debug_log_path, 'a') as f:
+                f.write(f"[{datetime.now().isoformat()}] Replaced non-cp932 character at position {e.start}: '{prompt[e.start]}' -> '?'\n")
+            # 再帰的に他の問題文字もチェック
+            return self.sanitize_prompt_for_cp932(''.join(result))
+    
     def build_claude_command(self, claude_cmd: Union[str, List[str]], prompt: str, include_resume: bool = True) -> List[str]:
         """Claude CLIコマンドを構築する共通関数
         
@@ -60,8 +84,18 @@ class ClaudeSessionManager:
             with open(debug_log_path, 'a') as f:
                 f.write(f"[{datetime.now().isoformat()}] Using --resume with session_id: {self.before_session_id}\n")
         
+        # Windows環境の場合、cp932でエンコードできない文字を置換
+        if platform.system() == "Windows":
+            safe_prompt = self.sanitize_prompt_for_cp932(prompt)
+            if safe_prompt != prompt:
+                debug_log_path = os.path.join(os.path.dirname(__file__), '..', 'claude_command_debug.log')
+                with open(debug_log_path, 'a') as f:
+                    f.write(f"[{datetime.now().isoformat()}] Prompt sanitized for cp932 compatibility\n")
+        else:
+            safe_prompt = prompt
+        
         # プロンプトを追加
-        base_args.extend(["-p", prompt])
+        base_args.extend(["-p", safe_prompt])
         
         # コマンドを構築
         if isinstance(claude_cmd, str):
