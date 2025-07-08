@@ -75,6 +75,18 @@ python test/test_emoji_prompt.py
 - **エンコーディング対応**:
   - `encoding='utf-8', errors='replace'`により、Windows環境でのcp932エンコーディング問題に対応
   - 絵文字や特殊文字は環境により制限あり
+- **セッションIDの使い方（超重要）**:
+  - **セッションIDは使い捨て**: 各セッションIDは1回の`--resume`でのみ使用可能
+  - **JSONで返されるsession_idは「次に使うためのID」**: 現在の会話のIDではない
+  - **保存と復元の正しいフロー**:
+    1. 会話A-1 → JSON{sessionID:AAA}を返す
+    2. 会話A-2（--resume AAA） → JSON{sessionID:BBB}を返す
+    3. `get_current_session` → BBBを保存（まだ未使用）
+    4. **`reset_session`が必須** → BBBが使われないようにリセット
+    5. 会話B-1 → JSON{sessionID:XXX}を返す
+    6. `set_current_session(BBB)` → 会話Aに戻る
+    7. 会話A-3（--resume BBB） → 会話Aが継続される
+  - **警告**: `get_current_session`後に`reset_session`を忘れると、保存したセッションIDが使われて復元不可能になる
 - **制約事項**:
   - 並列実行は不可（--resumeによるセッション継続性を保つため）
   - 履歴は最新100件まで保持（メモリ内のみ）
@@ -130,6 +142,44 @@ mcp-claude-context-continuity/
 - **Claude CLI探索**: 
   - Unix系: which → 一般的なパス → 環境変数の順で探索
   - Windows: WSL内でwhich → nvmパスの順で探索
+
+## よくある間違い（セッション管理）
+
+1. **`get_current_session`後に`reset_session`を忘れる**
+   ```
+   ❌ 間違い:
+   session_id = get_current_session()  # セッションIDを保存
+   execute_claude("次の会話")         # 保存したIDが使われてしまう！
+   
+   ✅ 正しい:
+   session_id = get_current_session()  # セッションIDを保存
+   reset_session()                     # リセットが必須！
+   execute_claude("次の会話")         # 新しいセッションで開始
+   ```
+
+2. **同じセッションIDを複数回使用する**
+   ```
+   ❌ 間違い:
+   set_current_session("AAA")
+   execute_claude("質問1")  # AAAを使用
+   execute_claude("質問2")  # AAAを再度使おうとする（エラー）
+   
+   ✅ 正しい:
+   set_current_session("AAA")
+   execute_claude("質問1")  # AAAを使用 → 新しいID「BBB」が返される
+   execute_claude("質問2")  # BBBを使用 → 正常に継続
+   ```
+
+3. **現在の会話のIDだと勘違いする**
+   ```
+   ❌ 間違い:
+   result = execute_claude("こんにちは")
+   # resultのsession_idは「この会話のID」だと思う
+   
+   ✅ 正しい理解:
+   result = execute_claude("こんにちは")
+   # resultのsession_idは「次回使うためのID」
+   ```
 
 ## 既知の制限事項
 - **Windows環境での文字エンコーディング**:
