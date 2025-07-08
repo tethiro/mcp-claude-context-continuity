@@ -112,7 +112,7 @@ class ClaudeSessionManager:
             stdout, _ = await proc.communicate()
             if proc.returncode == 0 and stdout:
                 return stdout.decode().strip()
-        except:
+        except (OSError, asyncio.TimeoutError):
             pass
         
         # 2. よくある場所をチェック
@@ -154,7 +154,7 @@ class ClaudeSessionManager:
             if result.returncode == 0 and result.stdout:
                 path = result.stdout.strip()
                 return ["wsl", "--", path]
-        except:
+        except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError):
             pass
         
         # 2. よくあるnvmのパスを試す
@@ -171,7 +171,7 @@ class ClaudeSessionManager:
             if result.returncode == 0 and result.stdout:
                 username = result.stdout.strip()
                 nvm_paths.append(f"/home/{username}/.nvm/versions/node/v22.17.0/bin/claude")
-        except:
+        except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError):
             pass
         
         for path in nvm_paths:
@@ -183,7 +183,7 @@ class ClaudeSessionManager:
                 )
                 if result.returncode == 0:
                     return ["wsl", "--", path]
-            except:
+            except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError):
                 pass
         
         return None
