@@ -118,7 +118,7 @@ Claude Desktop内で以下の8つのツールが利用可能になります：
   "tool": "get_current_session"
 }
 ```
-**重要**: セッションIDを保存した後は、必ず`reset_session`を実行してください。そうしないと、保存したセッションIDが次の会話で使われてしまい、復元できなくなります。
+**重要**: セッションIDを保存した後は、必ず`reset_session`を実行してください。そうしないと、保存したセッションIDが次の会話で使われてしまいます。ただし、使用済みのセッションIDでもその時点の会話状態に復元可能です。
 
 ### set_current_session
 特定のセッションIDを設定して会話を継続：
@@ -168,6 +168,24 @@ Claude CLIの動作確認：
 7. set_current_session(BBB) → 会話Aに戻る
 8. 会話A-3（--resume BBB） → セッションID: CCC を返す
 ```
+
+### セッションIDのタイムスタンプ機能（重要）
+
+セッションIDは会話の「タイムスタンプ」として機能し、使用済みのIDでもその時点の会話状態に戻ることができます：
+
+```
+会話の流れ:
+1. 「私は太郎です」 → session_id: AAA
+2. 「好きな食べ物はラーメン」（--resume AAA） → session_id: BBB
+3. 「趣味は読書」（--resume BBB） → session_id: CCC
+
+復元時の動作:
+- set_current_session(AAA) → 太郎の名前のみ知っている状態
+- set_current_session(BBB) → 太郎とラーメンを知っている状態（読書は知らない）
+- set_current_session(CCC) → すべての情報を知っている状態
+```
+
+これにより、会話の任意の時点に戻って別の話題に分岐することが可能です。
 
 ### セッション管理
 

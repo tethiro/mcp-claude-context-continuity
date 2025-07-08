@@ -62,7 +62,8 @@ python test/test_emoji_prompt.py
   - 初回: `claude --dangerously-skip-permissions --output-format json -p "質問"`
   - 2回目以降: `claude --dangerously-skip-permissions --output-format json --resume <session_id> -p "質問"`
   - これにより前回の会話内容を記憶した状態で対話が可能
-  - **重要**: `set_current_session`で過去のセッションIDを設定すると、その時点の会話内容に戻ることができる
+  - **重要**: セッションIDは会話のタイムスタンプとして機能し、過去のどの時点にも戻ることができる
+  - **新発見**: 使用済みセッションIDでも、その使用時点の状態に復元可能（未来の会話は忘れる）
 - **環境別の呼び出し方法（重要）**:
   - **WSL上のGeminiからClaudeを呼ぶ場合**: 直接実行（`/path/to/claude`）
   - **Windows上のGeminiからClaudeを呼ぶ場合**: WSL経由（`wsl -- /path/to/claude`）
@@ -78,6 +79,7 @@ python test/test_emoji_prompt.py
 - **セッションIDの使い方（超重要）**:
   - **セッションIDは使い捨て**: 各セッションIDは1回の`--resume`でのみ使用可能
   - **JSONで返されるsession_idは「次に使うためのID」**: 現在の会話のIDではない
+  - **セッションIDはタイムスタンプとして機能**: 使用済みのセッションIDでも、その時点の会話状態に戻ることができる
   - **保存と復元の正しいフロー**:
     1. 会話A-1 → JSON{sessionID:AAA}を返す
     2. 会話A-2（--resume AAA） → JSON{sessionID:BBB}を返す
@@ -86,7 +88,9 @@ python test/test_emoji_prompt.py
     5. 会話B-1 → JSON{sessionID:XXX}を返す
     6. `set_current_session(BBB)` → 会話Aに戻る
     7. 会話A-3（--resume BBB） → 会話Aが継続される
-  - **警告**: `get_current_session`後に`reset_session`を忘れると、保存したセッションIDが使われて復元不可能になる
+  - **重要な発見**: `reset_session`を忘れてセッションIDが使われた後でも、そのIDで復元すると「使われた時点」の会話状態に戻る
+    - 例: セッションBBBが会話3で使われた後でも、BBBで復元すると会話2の直後の状態に戻る
+    - 会話3以降の内容は知らない（時系列の整合性が保たれる）
 - **制約事項**:
   - 並列実行は不可（--resumeによるセッション継続性を保つため）
   - 履歴は最新100件まで保持（メモリ内のみ）
@@ -114,7 +118,9 @@ mcp-claude-context-continuity/
 ├── doc/
 │   ├── sync_execution_unification.md       # 同期実行統一の記録
 │   ├── windows_async_performance_issue.md  # Windows非同期問題の記録
-│   └── gemini_code_review_20250108.md      # Geminiコードレビュー
+│   ├── gemini_code_review_20250108.md      # Geminiコードレビュー
+│   ├── session_management_detailed_spec.md # セッション管理詳細仕様
+│   └── test_results_analysis_20250108.md   # 総括テスト結果分析
 ├── claude_command_debug.log         # コマンド実行ログ
 ├── requirements.txt                 # Python依存関係
 ├── CLAUDE.md                        # このファイル
@@ -143,43 +149,58 @@ mcp-claude-context-continuity/
   - Unix系: which → 一般的なパス → 環境変数の順で探索
   - Windows: WSL内でwhich → nvmパスの順で探索
 
-## よくある間違い（セッション管理）
+## よくある間違いと正しい理解（セッション管理）
 
-1. **`get_current_session`後に`reset_session`を忘れる**
-   ```
-   ❌ 間違い:
-   session_id = get_current_session()  # セッションIDを保存
-   execute_claude("次の会話")         # 保存したIDが使われてしまう！
-   
-   ✅ 正しい:
-   session_id = get_current_session()  # セッションIDを保存
-   reset_session()                     # リセットが必須！
-   execute_claude("次の会話")         # 新しいセッションで開始
-   ```
+### 1. **`get_current_session`後に`reset_session`を忘れる**
+```
+❌ 間違い:
+session_id = get_current_session()  # セッションIDを保存
+execute_claude("次の会話")         # 保存したIDが使われてしまう！
 
-2. **同じセッションIDを複数回使用する**
-   ```
-   ❌ 間違い:
-   set_current_session("AAA")
-   execute_claude("質問1")  # AAAを使用
-   execute_claude("質問2")  # AAAを再度使おうとする（エラー）
-   
-   ✅ 正しい:
-   set_current_session("AAA")
-   execute_claude("質問1")  # AAAを使用 → 新しいID「BBB」が返される
-   execute_claude("質問2")  # BBBを使用 → 正常に継続
-   ```
+✅ 正しい:
+session_id = get_current_session()  # セッションIDを保存
+reset_session()                     # リセットが必須！
+execute_claude("次の会話")         # 新しいセッションで開始
 
-3. **現在の会話のIDだと勘違いする**
-   ```
-   ❌ 間違い:
-   result = execute_claude("こんにちは")
-   # resultのsession_idは「この会話のID」だと思う
-   
-   ✅ 正しい理解:
-   result = execute_claude("こんにちは")
-   # resultのsession_idは「次回使うためのID」
-   ```
+⚠️ ただし: reset_sessionを忘れても、使われたセッションIDはその時点のスナップショットとして機能する
+```
+
+### 2. **同じセッションIDを複数回使用する**
+```
+❌ 間違い:
+set_current_session("AAA")
+execute_claude("質問1")  # AAAを使用
+execute_claude("質問2")  # AAAを再度使おうとする（エラー）
+
+✅ 正しい:
+set_current_session("AAA")
+execute_claude("質問1")  # AAAを使用 → 新しいID「BBB」が返される
+execute_claude("質問2")  # BBBを使用 → 正常に継続
+```
+
+### 3. **現在の会話のIDだと勘違いする**
+```
+❌ 間違い:
+result = execute_claude("こんにちは")
+# resultのsession_idは「この会話のID」だと思う
+
+✅ 正しい理解:
+result = execute_claude("こんにちは")
+# resultのsession_idは「次回使うためのID」
+```
+
+### 4. **セッションIDのタイムスタンプ機能**
+```
+セッションの時系列:
+1. 会話1「太郎です」 → セッションAAA
+2. 会話2「ラーメンが好き」（--resume AAA） → セッションBBB
+3. 会話3「秘密の話」（--resume BBB） → セッションCCC
+
+復元時の動作:
+- set_current_session(AAA) → 会話1の直後の状態（太郎のみ知っている）
+- set_current_session(BBB) → 会話2の直後の状態（太郎とラーメンを知っている、秘密は知らない）
+- set_current_session(CCC) → 会話3の直後の状態（すべて知っている）
+```
 
 ## 既知の制限事項
 - **Windows環境での文字エンコーディング**:
