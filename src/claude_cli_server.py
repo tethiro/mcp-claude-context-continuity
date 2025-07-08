@@ -264,17 +264,18 @@ async def _execute_claude_command(cmd: List[str], retry_count: int = 0) -> Dict:
                     new_session_id = response_json["session_id"]
                     old_session_id = session_manager.before_session_id
                     
-                    # 手動設定されたセッションの場合
+                    # 手動設定されたセッションの場合でも、新しいセッションIDに更新する
                     if session_manager.is_manually_set:
                         with open(debug_log_path, 'a') as f:
-                            f.write(f"[{datetime.now().isoformat()}] Manual session kept: {old_session_id} (new would be: {new_session_id})\n")
-                        # 手動設定フラグをリセット（次回からは通常モードに戻る）
+                            f.write(f"[{datetime.now().isoformat()}] Manual session used once: {old_session_id} -> {new_session_id}\n")
+                        # 手動設定フラグをリセット
                         session_manager.is_manually_set = False
                     else:
-                        # 通常の自動更新
-                        session_manager.before_session_id = new_session_id
                         with open(debug_log_path, 'a') as f:
                             f.write(f"[{datetime.now().isoformat()}] Session updated: {old_session_id} -> {new_session_id}\n")
+                    
+                    # セッションIDを更新（手動設定でも必ず更新）
+                    session_manager.before_session_id = new_session_id
                 
                 # resultフィールドの内容を確認
                 result_content = response_json.get("result", "")

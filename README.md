@@ -112,12 +112,13 @@ Claude Desktop内で以下の8つのツールが利用可能になります：
 ```
 
 ### get_current_session
-現在のセッション情報を取得：
+現在の未使用セッションIDを取得（後で復元するため）：
 ```json
 {
   "tool": "get_current_session"
 }
 ```
+**重要**: セッションIDを保存した後は、必ず`reset_session`を実行してください。そうしないと、保存したセッションIDが次の会話で使われてしまい、復元できなくなります。
 
 ### set_current_session
 特定のセッションIDを設定して会話を継続：
@@ -154,6 +155,19 @@ Claude CLIの動作確認：
 ```
 
 ## 仕組み
+
+### セッション管理の正しい使い方
+
+```
+1. 会話A-1 → セッションID: AAA を返す
+2. 会話A-2（--resume AAA） → セッションID: BBB を返す
+3. get_current_session → BBB を保存
+4. reset_session → 重要！BBBを使わないようにリセット
+5. 会話B-1 → セッションID: XXX を返す
+6. 会話B-2（--resume XXX） → セッションID: YYY を返す
+7. set_current_session(BBB) → 会話Aに戻る
+8. 会話A-3（--resume BBB） → セッションID: CCC を返す
+```
 
 ### セッション管理
 
