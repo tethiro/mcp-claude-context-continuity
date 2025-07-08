@@ -420,22 +420,45 @@ async def _execute_claude_command(cmd: List[str], retry_count: int = 0) -> Dict:
                 is_execution_error = not result_str and response_json.get("subtype") == "error_during_execution"
                 
                 if is_execution_error and retry_count < 1:
-                    # 1回だけリトライ
+                    # リトライの代わりに、Claude CLIに問題を報告して応答を求める
                     with open(debug_log_path, 'a') as f:
-                        f.write(f"[{datetime.now().isoformat()}] RETRY: error_during_execution detected, retrying... (attempt {retry_count + 1})\n")
+                        f.write(f"[{datetime.now().isoformat()}] Empty result detected, asking Claude about it...\n")
                     
-                    # 少し待機してからリトライ
-                    time.sleep(2)
+                    # 問題の詳細を含むプロンプトを構築
+                    output_tokens = response_json.get("usage", {}).get("output_tokens", 0)
+                    duration_ms = response_json.get("duration_ms", 0)
                     
-                    # リトライ実行（再帰呼び出し）
-                    return await _execute_claude_command(cmd, retry_count + 1)
+                    error_prompt = (
+                        f"前回の実行でJSONレスポンスのresultフィールドが空でした。"
+                        f"ただし、{output_tokens}トークンが生成され、実行時間は{duration_ms/1000:.1f}秒でした。"
+                        f"ファイル出力などの処理を行いましたか？何を実行したか教えてください。"
+                    )
+                    
+                    # エラー報告用のコマンドを構築（セッションを維持）
+                    error_cmd = session_manager.build_claude_command(
+                        cmd[0] if isinstance(cmd[0], str) else cmd[:3],  # WSLコマンドを考慮
+                        error_prompt,
+                        include_resume=True  # セッションを維持
+                    )
+                    
+                    # Claude CLIに問題を報告
+                    error_result = await _execute_claude_command(error_cmd, retry_count + 1)
+                    
+                    # 元のエラー情報と組み合わせて返す
+                    return {
+                        "success": True,  # エラー報告は成功
+                        "response": f"[実行は完了しましたが、結果が空でした。Claudeからの説明:]\n{error_result.get('response', 'エラー報告も失敗しました')}",
+                        "execution_time": execution_time + error_result.get('execution_time', 0),
+                        "warning": f"Empty result with {output_tokens} tokens generated",
+                        "error": None
+                    }
                 
                 return {
                     "success": not is_execution_error,
                     "response": result_str,
                     "execution_time": execution_time,
                     "warning": warning,
-                    "error": "Claude CLI execution error (retried once)" if is_execution_error and retry_count > 0 else "Claude CLI execution error" if is_execution_error else None
+                    "error": "Claude CLI execution error" if is_execution_error else None
                 }
                 
             except json.JSONDecodeError:
