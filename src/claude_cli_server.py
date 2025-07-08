@@ -26,6 +26,7 @@ class ClaudeSessionManager:
         self.before_session_id: Optional[str] = None  # 前回のセッションID
         self.history: List[Dict] = []
         self.claude_command: Optional[Union[str, List[str]]] = None  # キャッシュ
+        self.is_manually_set: bool = False  # 手動設定されたセッションかどうか
         
     def _add_history(self, entry: Dict):
         """履歴に操作を追加"""
@@ -260,10 +261,20 @@ async def _execute_claude_command(cmd: List[str], retry_count: int = 0) -> Dict:
                 
                 # session_idがあれば保存
                 if "session_id" in response_json:
+                    new_session_id = response_json["session_id"]
                     old_session_id = session_manager.before_session_id
-                    session_manager.before_session_id = response_json["session_id"]
-                    with open(debug_log_path, 'a') as f:
-                        f.write(f"[{datetime.now().isoformat()}] Session updated: {old_session_id} -> {response_json['session_id']}\n")
+                    
+                    # 手動設定されたセッションの場合
+                    if session_manager.is_manually_set:
+                        with open(debug_log_path, 'a') as f:
+                            f.write(f"[{datetime.now().isoformat()}] Manual session kept: {old_session_id} (new would be: {new_session_id})\n")
+                        # 手動設定フラグをリセット（次回からは通常モードに戻る）
+                        session_manager.is_manually_set = False
+                    else:
+                        # 通常の自動更新
+                        session_manager.before_session_id = new_session_id
+                        with open(debug_log_path, 'a') as f:
+                            f.write(f"[{datetime.now().isoformat()}] Session updated: {old_session_id} -> {new_session_id}\n")
                 
                 # resultフィールドの内容を確認
                 result_content = response_json.get("result", "")
@@ -317,6 +328,15 @@ async def _execute_claude_command(cmd: List[str], retry_count: int = 0) -> Dict:
                         warning = "Empty response from Claude CLI"
                 elif execution_time > 30:
                     warning = f"Long execution time: {execution_time:.1f}s"
+                
+                # 手動設定セッションが見つからなかった場合の警告
+                if session_manager.is_manually_set and "session_id" in response_json:
+                    if session_manager.before_session_id != response_json["session_id"]:
+                        if warning:
+                            warning += "; "
+                        else:
+                            warning = ""
+                        warning += f"Manual session not found, new session created"
                 
                 # 空の応答でerror_during_executionの場合の処理
                 is_execution_error = not result_str and response_json.get("subtype") == "error_during_execution"
@@ -736,6 +756,7 @@ async def reset_session() -> Dict:
     """
     old_session_id = session_manager.before_session_id
     session_manager.before_session_id = None
+    session_manager.is_manually_set = False  # 手動設定フラグもリセット
     
     return {
         "tool_name": "reset_session",
@@ -761,11 +782,12 @@ async def set_current_session(session_id: str) -> Dict:
     try:
         old_session_id = session_manager.before_session_id
         session_manager.before_session_id = session_id
+        session_manager.is_manually_set = True  # 手動設定フラグを立てる
         
         # デバッグログに記録
         debug_log_path = os.path.join(os.path.dirname(__file__), '..', 'claude_command_debug.log')
         with open(debug_log_path, 'a') as f:
-            f.write(f"[{datetime.now().isoformat()}] Session manually set: {old_session_id} -> {session_id}\n")
+            f.write(f"[{datetime.now().isoformat()}] Session manually set: {old_session_id} -> {session_id} (manual flag ON)\n")
         
         return {
             "tool_name": "set_current_session",

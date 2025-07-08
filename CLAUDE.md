@@ -62,6 +62,7 @@ python test/test_emoji_prompt.py
   - 初回: `claude --dangerously-skip-permissions --output-format json -p "質問"`
   - 2回目以降: `claude --dangerously-skip-permissions --output-format json --resume <session_id> -p "質問"`
   - これにより前回の会話内容を記憶した状態で対話が可能
+  - **重要**: `set_current_session`で過去のセッションIDを設定すると、その時点の会話内容に戻ることができる
 - **環境別の呼び出し方法（重要）**:
   - **WSL上のGeminiからClaudeを呼ぶ場合**: 直接実行（`/path/to/claude`）
   - **Windows上のGeminiからClaudeを呼ぶ場合**: WSL経由（`wsl -- /path/to/claude`）
