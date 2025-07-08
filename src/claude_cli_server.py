@@ -35,73 +35,6 @@ class ClaudeSessionManager:
         if len(self.history) > 100:
             self.history = self.history[-100:]
     
-    def sanitize_prompt_for_cp932(self, prompt: str) -> str:
-        """cp932でエンコードできない文字を意味を保つ形で置換
-        
-        Args:
-            prompt: 元のプロンプト
-            
-        Returns:
-            cp932互換のプロンプト
-        """
-        # カスタムマッピングテーブル（意味を保つ置換）
-        custom_map = {
-            # 上付き・下付き数字
-            '²': '2', '³': '3', '¹': '1',
-            '₀': '0', '₁': '1', '₂': '2', '₃': '3', '₄': '4',
-            '₅': '5', '₆': '6', '₇': '7', '₈': '8', '₉': '9',
-            # 数学記号
-            '≤': '<=', '≥': '>=', '≠': '!=', '≈': '~=',
-            '∞': 'inf', '√': 'sqrt', '∑': 'sum', '∏': 'prod',
-            '∈': 'in', '∉': 'not in', '⊂': 'subset', '⊃': 'superset',
-            '∩': 'cap', '∪': 'cup', '∅': 'empty',
-            # ギリシャ文字
-            'α': 'alpha', 'β': 'beta', 'γ': 'gamma', 'δ': 'delta',
-            'ε': 'epsilon', 'ζ': 'zeta', 'η': 'eta', 'θ': 'theta',
-            'ι': 'iota', 'κ': 'kappa', 'λ': 'lambda', 'μ': 'mu',
-            'ν': 'nu', 'ξ': 'xi', 'ο': 'omicron', 'π': 'pi',
-            'ρ': 'rho', 'σ': 'sigma', 'τ': 'tau', 'υ': 'upsilon',
-            'φ': 'phi', 'χ': 'chi', 'ψ': 'psi', 'ω': 'omega',
-            # 大文字ギリシャ文字
-            'Α': 'Alpha', 'Β': 'Beta', 'Γ': 'Gamma', 'Δ': 'Delta',
-            'Π': 'Pi', 'Σ': 'Sigma', 'Φ': 'Phi', 'Ω': 'Omega',
-            # 矢印
-            '→': '->', '←': '<-', '↑': '^', '↓': 'v',
-            '⇒': '=>', '⇐': '<=', '⇔': '<=>',
-            # その他の記号
-            '°': 'deg', '•': '*', '◯': 'o', '●': '*',
-            '♪': 'note', '♫': 'notes', '♭': 'flat', '♯': 'sharp',
-            '€': 'EUR', '£': 'GBP', '¥': 'JPY',
-        }
-        
-        # まずカスタムマッピングで置換
-        result = prompt
-        for original, replacement in custom_map.items():
-            if original in result:
-                result = result.replace(original, replacement)
-                # デバッグログ
-                debug_log_path = os.path.join(os.path.dirname(__file__), '..', 'claude_command_debug.log')
-                with open(debug_log_path, 'a') as f:
-                    f.write(f"[{datetime.now().isoformat()}] Transliterated '{original}' -> '{replacement}'\n")
-        
-        # Unicode正規化（NFKC）で互換文字を変換
-        import unicodedata
-        result = unicodedata.normalize('NFKC', result)
-        
-        # それでもcp932でエンコードできない文字があれば再帰的に処理
-        try:
-            result.encode('cp932')
-            return result
-        except UnicodeEncodeError as e:
-            # 対応していない文字は '?' に置換
-            char_list = list(result)
-            char_list[e.start] = '?'
-            debug_log_path = os.path.join(os.path.dirname(__file__), '..', 'claude_command_debug.log')
-            with open(debug_log_path, 'a') as f:
-                f.write(f"[{datetime.now().isoformat()}] Unknown character at position {e.start}: '{result[e.start]}' -> '?'\n")
-            # 再帰的に他の問題文字もチェック
-            return self.sanitize_prompt_for_cp932(''.join(char_list))
-    
     def build_claude_command(self, claude_cmd: Union[str, List[str]], prompt: str, include_resume: bool = True) -> List[str]:
         """Claude CLIコマンドを構築する共通関数
         
@@ -124,21 +57,11 @@ class ClaudeSessionManager:
             base_args.extend(["--resume", self.before_session_id])
             # デバッグ: resumeセッションIDをログに記録
             debug_log_path = os.path.join(os.path.dirname(__file__), '..', 'claude_command_debug.log')
-            with open(debug_log_path, 'a') as f:
+            with open(debug_log_path, 'a', encoding='utf-8') as f:
                 f.write(f"[{datetime.now().isoformat()}] Using --resume with session_id: {self.before_session_id}\n")
         
-        # Windows環境の場合、cp932でエンコードできない文字を置換
-        if platform.system() == "Windows":
-            safe_prompt = self.sanitize_prompt_for_cp932(prompt)
-            if safe_prompt != prompt:
-                debug_log_path = os.path.join(os.path.dirname(__file__), '..', 'claude_command_debug.log')
-                with open(debug_log_path, 'a') as f:
-                    f.write(f"[{datetime.now().isoformat()}] Prompt sanitized for cp932 compatibility\n")
-        else:
-            safe_prompt = prompt
-        
-        # プロンプトを追加
-        base_args.extend(["-p", safe_prompt])
+        # プロンプトを追加（UTF-8で処理）
+        base_args.extend(["-p", prompt])
         
         # コマンドを構築
         if isinstance(claude_cmd, str):
@@ -283,7 +206,7 @@ async def _execute_claude_command(cmd: List[str], retry_count: int = 0) -> Dict:
     
     # デバッグ: 実行コマンドをログファイルに記録
     debug_log_path = os.path.join(os.path.dirname(__file__), '..', 'claude_command_debug.log')
-    with open(debug_log_path, 'a') as f:
+    with open(debug_log_path, 'a', encoding='utf-8') as f:
         f.write(f"\n[{datetime.now().isoformat()}] Executing command: {' '.join(cmd)}\n")
     
     # 全環境で同期実行を使用（MCPは1対1通信のため非同期の必要なし）
@@ -307,7 +230,7 @@ async def _execute_claude_command(cmd: List[str], retry_count: int = 0) -> Dict:
         execution_time = time.time() - start_time
         
         # デバッグ: 結果をログに記録
-        with open(debug_log_path, 'a') as f:
+        with open(debug_log_path, 'a', encoding='utf-8') as f:
             f.write(f"[{datetime.now().isoformat()}] Return code: {result.returncode}, Time: {execution_time:.2f}s\n")
         
         if result.returncode != 0:
@@ -322,7 +245,7 @@ async def _execute_claude_command(cmd: List[str], retry_count: int = 0) -> Dict:
         output = result.stdout.strip()
         
         # デバッグ: 生の出力をログに記録（最初の500文字のみ）
-        with open(debug_log_path, 'a') as f:
+        with open(debug_log_path, 'a', encoding='utf-8') as f:
             f.write(f"[{datetime.now().isoformat()}] Raw output (first 500 chars): {output[:500]}\n")
         
         # JSON形式かチェック
@@ -331,7 +254,7 @@ async def _execute_claude_command(cmd: List[str], retry_count: int = 0) -> Dict:
                 response_json = json.loads(output)
                 
                 # デバッグ: JSONの構造をログに記録
-                with open(debug_log_path, 'a') as f:
+                with open(debug_log_path, 'a', encoding='utf-8') as f:
                     f.write(f"[{datetime.now().isoformat()}] JSON keys: {list(response_json.keys())}\n")
                     if "result" in response_json:
                         f.write(f"[{datetime.now().isoformat()}] Result field: '{response_json['result']}'\n")
@@ -343,12 +266,12 @@ async def _execute_claude_command(cmd: List[str], retry_count: int = 0) -> Dict:
                     
                     # 手動設定されたセッションの場合でも、新しいセッションIDに更新する
                     if session_manager.is_manually_set:
-                        with open(debug_log_path, 'a') as f:
+                        with open(debug_log_path, 'a', encoding='utf-8') as f:
                             f.write(f"[{datetime.now().isoformat()}] Manual session used once: {old_session_id} -> {new_session_id}\n")
                         # 手動設定フラグをリセット
                         session_manager.is_manually_set = False
                     else:
-                        with open(debug_log_path, 'a') as f:
+                        with open(debug_log_path, 'a', encoding='utf-8') as f:
                             f.write(f"[{datetime.now().isoformat()}] Session updated: {old_session_id} -> {new_session_id}\n")
                     
                     # セッションIDを更新（手動設定でも必ず更新）
@@ -358,19 +281,19 @@ async def _execute_claude_command(cmd: List[str], retry_count: int = 0) -> Dict:
                 result_content = response_json.get("result", "")
                 
                 # resultフィールドの型を確認してログに記録
-                with open(debug_log_path, 'a') as f:
+                with open(debug_log_path, 'a', encoding='utf-8') as f:
                     f.write(f"[{datetime.now().isoformat()}] Result type: {type(result_content).__name__}, value: {repr(result_content)[:200]}\n")
                 
                 # resultが文字列でない場合の処理
                 if isinstance(result_content, (list, dict)):
                     # 配列やオブジェクトの場合はJSON文字列に変換
                     result_str = json.dumps(result_content, ensure_ascii=False)
-                    with open(debug_log_path, 'a') as f:
+                    with open(debug_log_path, 'a', encoding='utf-8') as f:
                         f.write(f"[{datetime.now().isoformat()}] INFO: Result is {type(result_content).__name__}, converting to string: {result_str[:200]}\n")
                 elif result_content is None:
                     # Noneの場合は空文字列にする
                     result_str = ""
-                    with open(debug_log_path, 'a') as f:
+                    with open(debug_log_path, 'a', encoding='utf-8') as f:
                         f.write(f"[{datetime.now().isoformat()}] WARNING: Result is None, using empty string\n")
                 else:
                     # 文字列の場合はそのまま使用
@@ -378,7 +301,7 @@ async def _execute_claude_command(cmd: List[str], retry_count: int = 0) -> Dict:
                 
                 # 空の応答の場合は警告をログに記録
                 if not result_str:
-                    with open(debug_log_path, 'a') as f:
+                    with open(debug_log_path, 'a', encoding='utf-8') as f:
                         f.write(f"[{datetime.now().isoformat()}] WARNING: Empty result detected. Full JSON: {json.dumps(response_json, ensure_ascii=False)[:1000]}\n")
                         # エラーチェック
                         if response_json.get("is_error", False):
@@ -388,7 +311,7 @@ async def _execute_claude_command(cmd: List[str], retry_count: int = 0) -> Dict:
                 
                 # 実行時間が長い場合も警告
                 if execution_time > 30:
-                    with open(debug_log_path, 'a') as f:
+                    with open(debug_log_path, 'a', encoding='utf-8') as f:
                         f.write(f"[{datetime.now().isoformat()}] WARNING: Long execution time: {execution_time:.2f}s\n")
                 
                 # 警告メッセージの構築
@@ -421,7 +344,7 @@ async def _execute_claude_command(cmd: List[str], retry_count: int = 0) -> Dict:
                 
                 if is_execution_error and retry_count < 1:
                     # リトライの代わりに、Claude CLIに問題を報告して応答を求める
-                    with open(debug_log_path, 'a') as f:
+                    with open(debug_log_path, 'a', encoding='utf-8') as f:
                         f.write(f"[{datetime.now().isoformat()}] Empty result detected, asking Claude about it...\n")
                     
                     # 問題の詳細を含むプロンプトを構築
@@ -629,7 +552,7 @@ async def execute_claude_with_context(prompt: str, file_path: str) -> Dict:
             
             # デバッグ: 生の出力をログに記録（最初の500文字のみ）
             debug_log_path = os.path.join(os.path.dirname(__file__), '..', 'claude_command_debug.log')
-            with open(debug_log_path, 'a') as f:
+            with open(debug_log_path, 'a', encoding='utf-8') as f:
                 f.write(f"[{datetime.now().isoformat()}] execute_claude_with_context Raw output (first 500 chars): {output[:500]}\n")
             
             # JSON形式かチェック
@@ -638,7 +561,7 @@ async def execute_claude_with_context(prompt: str, file_path: str) -> Dict:
                     response_json = json.loads(output)
                     
                     # デバッグ: JSONの構造をログに記録
-                    with open(debug_log_path, 'a') as f:
+                    with open(debug_log_path, 'a', encoding='utf-8') as f:
                         f.write(f"[{datetime.now().isoformat()}] execute_claude_with_context JSON keys: {list(response_json.keys())}\n")
                         if "result" in response_json:
                             f.write(f"[{datetime.now().isoformat()}] execute_claude_with_context Result field: '{response_json['result']}'\n")
@@ -647,7 +570,7 @@ async def execute_claude_with_context(prompt: str, file_path: str) -> Dict:
                     if "session_id" in response_json:
                         old_session_id = session_manager.before_session_id
                         session_manager.before_session_id = response_json["session_id"]
-                        with open(debug_log_path, 'a') as f:
+                        with open(debug_log_path, 'a', encoding='utf-8') as f:
                             f.write(f"[{datetime.now().isoformat()}] Session updated: {old_session_id} -> {response_json['session_id']}\n")
                     
                     # resultフィールドの内容を確認
@@ -655,7 +578,7 @@ async def execute_claude_with_context(prompt: str, file_path: str) -> Dict:
                     
                     # 空の応答の場合は警告をログに記録
                     if not result_content:
-                        with open(debug_log_path, 'a') as f:
+                        with open(debug_log_path, 'a', encoding='utf-8') as f:
                             f.write(f"[{datetime.now().isoformat()}] WARNING: execute_claude_with_context - Empty result field detected. Full JSON: {json.dumps(response_json)}\n")
                     
                     result = {
@@ -887,7 +810,7 @@ async def set_current_session(session_id: str) -> Dict:
         
         # デバッグログに記録
         debug_log_path = os.path.join(os.path.dirname(__file__), '..', 'claude_command_debug.log')
-        with open(debug_log_path, 'a') as f:
+        with open(debug_log_path, 'a', encoding='utf-8') as f:
             f.write(f"[{datetime.now().isoformat()}] Session manually set: {old_session_id} -> {session_id} (manual flag ON)\n")
         
         return {
