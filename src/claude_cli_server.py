@@ -36,7 +36,7 @@ class ClaudeSessionManager:
             self.history = self.history[-100:]
     
     def sanitize_prompt_for_cp932(self, prompt: str) -> str:
-        """cp932でエンコードできない文字を置換
+        """cp932でエンコードできない文字を意味を保つ形で置換
         
         Args:
             prompt: 元のプロンプト
@@ -44,20 +44,63 @@ class ClaudeSessionManager:
         Returns:
             cp932互換のプロンプト
         """
+        # カスタムマッピングテーブル（意味を保つ置換）
+        custom_map = {
+            # 上付き・下付き数字
+            '²': '2', '³': '3', '¹': '1',
+            '₀': '0', '₁': '1', '₂': '2', '₃': '3', '₄': '4',
+            '₅': '5', '₆': '6', '₇': '7', '₈': '8', '₉': '9',
+            # 数学記号
+            '≤': '<=', '≥': '>=', '≠': '!=', '≈': '~=',
+            '∞': 'inf', '√': 'sqrt', '∑': 'sum', '∏': 'prod',
+            '∈': 'in', '∉': 'not in', '⊂': 'subset', '⊃': 'superset',
+            '∩': 'cap', '∪': 'cup', '∅': 'empty',
+            # ギリシャ文字
+            'α': 'alpha', 'β': 'beta', 'γ': 'gamma', 'δ': 'delta',
+            'ε': 'epsilon', 'ζ': 'zeta', 'η': 'eta', 'θ': 'theta',
+            'ι': 'iota', 'κ': 'kappa', 'λ': 'lambda', 'μ': 'mu',
+            'ν': 'nu', 'ξ': 'xi', 'ο': 'omicron', 'π': 'pi',
+            'ρ': 'rho', 'σ': 'sigma', 'τ': 'tau', 'υ': 'upsilon',
+            'φ': 'phi', 'χ': 'chi', 'ψ': 'psi', 'ω': 'omega',
+            # 大文字ギリシャ文字
+            'Α': 'Alpha', 'Β': 'Beta', 'Γ': 'Gamma', 'Δ': 'Delta',
+            'Π': 'Pi', 'Σ': 'Sigma', 'Φ': 'Phi', 'Ω': 'Omega',
+            # 矢印
+            '→': '->', '←': '<-', '↑': '^', '↓': 'v',
+            '⇒': '=>', '⇐': '<=', '⇔': '<=>',
+            # その他の記号
+            '°': 'deg', '•': '*', '◯': 'o', '●': '*',
+            '♪': 'note', '♫': 'notes', '♭': 'flat', '♯': 'sharp',
+            '€': 'EUR', '£': 'GBP', '¥': 'JPY',
+        }
+        
+        # まずカスタムマッピングで置換
+        result = prompt
+        for original, replacement in custom_map.items():
+            if original in result:
+                result = result.replace(original, replacement)
+                # デバッグログ
+                debug_log_path = os.path.join(os.path.dirname(__file__), '..', 'claude_command_debug.log')
+                with open(debug_log_path, 'a') as f:
+                    f.write(f"[{datetime.now().isoformat()}] Transliterated '{original}' -> '{replacement}'\n")
+        
+        # Unicode正規化（NFKC）で互換文字を変換
+        import unicodedata
+        result = unicodedata.normalize('NFKC', result)
+        
+        # それでもcp932でエンコードできない文字があれば再帰的に処理
         try:
-            # cp932でエンコードを試みる
-            prompt.encode('cp932')
-            return prompt  # 問題なければそのまま返す
+            result.encode('cp932')
+            return result
         except UnicodeEncodeError as e:
-            # エラーが出た文字を '?' に置換
-            result = list(prompt)
-            result[e.start] = '?'
-            # デバッグログ
+            # 対応していない文字は '?' に置換
+            char_list = list(result)
+            char_list[e.start] = '?'
             debug_log_path = os.path.join(os.path.dirname(__file__), '..', 'claude_command_debug.log')
             with open(debug_log_path, 'a') as f:
-                f.write(f"[{datetime.now().isoformat()}] Replaced non-cp932 character at position {e.start}: '{prompt[e.start]}' -> '?'\n")
+                f.write(f"[{datetime.now().isoformat()}] Unknown character at position {e.start}: '{result[e.start]}' -> '?'\n")
             # 再帰的に他の問題文字もチェック
-            return self.sanitize_prompt_for_cp932(''.join(result))
+            return self.sanitize_prompt_for_cp932(''.join(char_list))
     
     def build_claude_command(self, claude_cmd: Union[str, List[str]], prompt: str, include_resume: bool = True) -> List[str]:
         """Claude CLIコマンドを構築する共通関数
