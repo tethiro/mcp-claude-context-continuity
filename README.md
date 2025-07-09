@@ -15,9 +15,10 @@ An MCP (Model Context Protocol) server that maintains conversation context for C
 ## Requirements
 
 - Python 3.8+
-- Claude CLI (must be installed)
+- Claude CLI (must be installed in WSL for all platforms)
 - FastMCP (`pip install fastmcp`)
 - WSL2 for Windows environments
+- Windows: Python must be installed on Windows (not in WSL)
 
 ## Installation
 
@@ -191,9 +192,10 @@ Claude CLIの会話コンテキストを保持するMCP（Model Context Protocol
 ## 必要条件
 
 - Python 3.8以上
-- Claude CLI（インストール済み）
+- Claude CLI（WSL内にインストール必須）
 - FastMCP（`pip install fastmcp`）
 - Windows環境の場合はWSL2
+- Windows: PythonはWindows側にインストール（WSL内ではなく）
 
 ## インストール
 

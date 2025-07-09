@@ -1,6 +1,6 @@
 {
   "name": "mcp-claude-context-continuity",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "MCP server that maintains conversation context for Claude CLI",
   "bin": {
     "mcp-claude-context-continuity": "bin/mcp-claude-context-continuity"
