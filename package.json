@@ -1,0 +1,28 @@
+{
+  "name": "mcp-claude-context-continuity",
+  "version": "1.0.0",
+  "description": "MCP server that maintains conversation context for Claude CLI",
+  "bin": {
+    "mcp-claude-context-continuity": "./bin/mcp-claude-context-continuity"
+  },
+  "scripts": {
+    "start": "python3 src/claude_cli_server.py"
+  },
+  "keywords": [
+    "mcp",
+    "claude",
+    "claude-cli",
+    "conversation",
+    "context",
+    "session"
+  ],
+  "author": "tethiro",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tethiro/mcp-claude-context-continuity.git"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}

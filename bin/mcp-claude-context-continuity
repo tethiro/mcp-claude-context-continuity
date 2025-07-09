@@ -1,0 +1,48 @@
+#!/usr/bin/env node
+
+const { spawn } = require('child_process');
+const path = require('path');
+const os = require('os');
+
+// Determine the Python command based on platform
+const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+
+// Path to the Python script
+const scriptPath = path.join(__dirname, '..', 'src', 'claude_cli_server.py');
+
+// Check if we're on Windows and need to use WSL
+if (process.platform === 'win32') {
+  // On Windows, use WSL to run the Python script
+  const wslScriptPath = scriptPath.replace(/\\/g, '/').replace(/^([A-Z]):/, (match, drive) => {
+    return `/mnt/${drive.toLowerCase()}`;
+  });
+  
+  const child = spawn('wsl', ['-e', 'python3', wslScriptPath], {
+    stdio: 'inherit'
+  });
+  
+  child.on('error', (err) => {
+    console.error('Failed to start MCP server via WSL:', err.message);
+    console.error('Please ensure WSL2 is installed and Python 3 is available in WSL.');
+    process.exit(1);
+  });
+  
+  child.on('exit', (code) => {
+    process.exit(code);
+  });
+} else {
+  // On Unix-like systems, run Python directly
+  const child = spawn(pythonCmd, [scriptPath], {
+    stdio: 'inherit'
+  });
+  
+  child.on('error', (err) => {
+    console.error('Failed to start MCP server:', err.message);
+    console.error(`Please ensure ${pythonCmd} is installed and in your PATH.`);
+    process.exit(1);
+  });
+  
+  child.on('exit', (code) => {
+    process.exit(code);
+  });
+}
