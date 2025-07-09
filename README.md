@@ -1,5 +1,156 @@
 # MCP Claude Context Continuity
 
+An MCP (Model Context Protocol) server that maintains conversation context for Claude CLI across multiple invocations.
+
+## Features
+
+- 🔄 **Conversation Continuity**: Leverages Claude CLI's `--resume` feature to maintain conversation context across multiple calls
+- 📝 **Session Management**: Save, restore, and branch conversations
+- 🖥️ **Cross-platform**: Supports Windows (via WSL), Linux, and macOS
+- ⚡ **Simple Implementation**: All functionality in a single Python file
+
+## Requirements
+
+- Python 3.8+
+- Claude CLI (must be installed)
+- FastMCP (`pip install fastmcp`)
+- WSL2 for Windows environments
+
+## Installation
+
+1. Clone the repository:
+```bash
+git clone https://github.com/tethiro/mcp-claude-context-continuity.git
+cd mcp-claude-context-continuity
+```
+
+2. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+## Configuration
+
+### Gemini CLI (Recommended)
+
+Add the following to your Gemini configuration file:
+
+**Windows** (`%USERPROFILE%\.gemini\settings.json`):
+```json
+{
+  "mcpServers": {
+    "claude-cli-server": {
+      "command": "wsl",
+      "args": [
+        "-e",
+        "python3",
+        "/mnt/c/path/to/mcp-claude-context-continuity/src/claude_cli_server.py"
+      ]
+    }
+  }
+}
+```
+
+**WSL/Linux/macOS** (`~/.gemini/settings.json`):
+```json
+{
+  "mcpServers": {
+    "claude-cli-server": {
+      "command": "python3",
+      "args": [
+        "/path/to/mcp-claude-context-continuity/src/claude_cli_server.py"
+      ]
+    }
+  }
+}
+```
+
+### Claude Desktop
+
+Add similar configuration to your Claude Desktop settings file.
+
+## Usage
+
+### Basic Usage
+
+1. **Simple conversation**:
+```
+execute_claude(prompt="Hello, I'm John")
+```
+
+2. **Continue conversation**:
+```
+execute_claude(prompt="Do you remember my name?")
+→ "Yes, you're John"
+```
+
+### Session Management
+
+1. **Save current session**:
+```
+session_id = get_current_session()
+```
+
+2. **Start new session**:
+```
+reset_session()
+```
+
+3. **Restore saved session**:
+```
+set_current_session(session_id="saved_id")
+```
+
+### Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `execute_claude` | Execute Claude CLI with conversation continuity |
+| `execute_claude_with_context` | Execute with file context |
+| `get_execution_history` | Get execution history |
+| `get_current_session` | Get current session ID |
+| `set_current_session` | Set session ID |
+| `reset_session` | Reset session |
+| `clear_execution_history` | Clear history |
+| `test_claude_cli` | Test functionality |
+
+## How Session Management Works
+
+Using Claude CLI's `--resume` feature, you can return to any point in a conversation using session IDs:
+
+```
+Conversation 1: "I'm Alice" → session_id: AAA
+Conversation 2: "I like reading" (--resume AAA) → session_id: BBB
+Conversation 3: "My favorite book is..." (--resume BBB) → session_id: CCC
+
+Later:
+set_current_session("AAA") → State where only "Alice" is known
+set_current_session("BBB") → State where "Alice" and "reading" are known
+```
+
+## Troubleshooting
+
+### Claude CLI Not Found
+
+Set the `CLAUDE_PATH` environment variable:
+```bash
+export CLAUDE_PATH=/path/to/claude
+```
+
+### Windows Environment Notes
+
+- WSL2 is required
+- Install Claude CLI inside WSL
+- Use WSL format paths (`/mnt/c/...`)
+
+## License
+
+MIT License
+
+---
+
+# MCP Claude Context Continuity
+
 Claude CLIの会話コンテキストを保持するMCP（Model Context Protocol）サーバーです。
 
 ## 特徴
@@ -20,7 +171,7 @@ Claude CLIの会話コンテキストを保持するMCP（Model Context Protocol
 
 1. リポジトリをクローン：
 ```bash
-git clone https://github.com/yourusername/mcp-claude-context-continuity.git
+git clone https://github.com/tethiro/mcp-claude-context-continuity.git
 cd mcp-claude-context-continuity
 ```
 
