@@ -18,13 +18,13 @@ An MCP (Model Context Protocol) server that maintains conversation context for C
 
 ## Installation
 
-### Option 1: Using npx (Recommended)
+### Option 1: Using npm (Recommended)
 
 ```bash
-npx mcp-claude-context-continuity
+npm install -g mcp-claude-context-continuity
 ```
 
-This will automatically download and run the server without manual installation.
+After installation, the server will be available as a global command.
 
 ### Option 2: Manual Installation
 
@@ -45,15 +45,14 @@ pip install -r requirements.txt
 
 Add the following to your Gemini configuration file:
 
-#### Using npx (Simplest)
+#### Using npm global install (Simplest)
 
 **All platforms** (`~/.gemini/settings.json` or `%USERPROFILE%\.gemini\settings.json`):
 ```json
 {
   "mcpServers": {
     "claude-cli-server": {
-      "command": "npx",
-      "args": ["mcp-claude-context-continuity"]
+      "command": "mcp-claude-context-continuity"
     }
   }
 }
@@ -195,13 +194,13 @@ Claude CLIの会話コンテキストを保持するMCP（Model Context Protocol
 
 ## インストール
 
-### 方法1: npxを使用（推奨）
+### 方法1: npmを使用（推奨）
 
 ```bash
-npx mcp-claude-context-continuity
+npm install -g mcp-claude-context-continuity
 ```
 
-手動インストール不要で自動的にダウンロード・実行されます。
+インストール後、グローバルコマンドとして利用可能になります。
 
 ### 方法2: 手動インストール
 
@@ -222,15 +221,14 @@ pip install -r requirements.txt
 
 Geminiの設定ファイルに以下を追加：
 
-#### npxを使用（最も簡単）
+#### npmグローバルインストールを使用（最も簡単）
 
 **全環境共通** (`~/.gemini/settings.json` または `%USERPROFILE%\.gemini\settings.json`):
 ```json
 {
   "mcpServers": {
     "claude-cli-server": {
-      "command": "npx",
-      "args": ["mcp-claude-context-continuity"]
+      "command": "mcp-claude-context-continuity"
     }
   }
 }
