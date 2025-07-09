@@ -1,5 +1,8 @@
 # MCP Claude Context Continuity
 
+[![npm version](https://badge.fury.io/js/mcp-claude-context-continuity.svg)](https://www.npmjs.com/package/mcp-claude-context-continuity)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 An MCP (Model Context Protocol) server that maintains conversation context for Claude CLI across multiple invocations.
 
 ## Features
