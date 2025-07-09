@@ -79,7 +79,7 @@ mcp-claude-context-continuity/
 #### Windowsでの探索順序
 1. `wsl -- bash -lc "which claude"` で検索（bashログインシェル経由）
 2. 既知のnvmパスをチェック
-   - `/home/tethiro/.nvm/versions/node/v22.17.0/bin/claude`
+   - `/home/username/.nvm/versions/node/vXX.XX.X/bin/claude`
    - WSLユーザー名から動的に生成したパス
 
 ### 4.2 MCP提供ツール
@@ -258,7 +258,7 @@ mcp-claude-context-continuity/
 
 ### Windows版での実行方法（参考）
 ```bash
-wsl -- /home/tethiro/.nvm/versions/node/v22.17.0/bin/claude -p "こんちは"
+wsl -- /home/username/.nvm/versions/node/vXX.XX.X/bin/claude -p "こんにちは"
 ```
 
 ### 重要な発見

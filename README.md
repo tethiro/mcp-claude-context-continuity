@@ -1,23 +1,20 @@
-# Claude CLI MCP Server
+# MCP Claude Context Continuity
 
-Claude CLIをプログラム内部から呼び出し、会話の継続性を保持するMCP（Model Context Protocol）サーバーです。
+Claude CLIの会話コンテキストを保持するMCP（Model Context Protocol）サーバーです。
 
 ## 特徴
 
-- 🔍 **自動探索**: Claude CLIのインストール場所を自動的に検出
-- 💬 **会話継続**: `--resume` オプションによるセッション管理で会話コンテキストを保持
+- 🔄 **会話の継続性**: Claude CLIの`--resume`機能を活用し、複数の呼び出し間で会話コンテキストを保持
+- 📝 **セッション管理**: 会話の保存、復元、分岐が可能
 - 🖥️ **クロスプラットフォーム**: Windows（WSL経由）、Linux、macOS対応
-- 📄 **ファイルコンテキスト**: ファイル内容を含めた質問が可能
-- 📊 **履歴管理**: 実行履歴の保存と参照
-- 🔧 **一貫性のあるAPI**: すべてのツールが`tool_name`フィールドを含む統一された応答形式
-- ⚡ **高速実行**: 全環境で同期実行を採用し、安定した10秒前後の応答時間を実現
+- ⚡ **シンプルな実装**: 単一のPythonファイルで全機能を提供
 
 ## 必要条件
 
 - Python 3.8以上
 - Claude CLI（インストール済み）
+- FastMCP（`pip install fastmcp`）
 - Windows環境の場合はWSL2
-- FastMCP 0.8.0以上
 
 ## インストール
 
@@ -32,21 +29,13 @@ cd mcp-claude-context-continuity
 pip install -r requirements.txt
 ```
 
-3. Claude CLIの動作確認：
-```bash
-# MCPサーバー動作テスト
-python test/test_claude_cli_server_simple.py
-
-# デバッグテスト（各ツールを直接実行）
-python test/test_mcp_server_debug.py
-```
-
 ## 設定
 
-### Claude Desktop（Windows）
+### Gemini CLI（推奨）
 
-`%APPDATA%\Claude\claude_desktop_config.json` に以下を追加：
+Geminiの設定ファイルに以下を追加：
 
+**Windows環境** (`%APPDATA%\gemini-cli\config.json`):
 ```json
 {
   "mcpServers": {
@@ -55,17 +44,14 @@ python test/test_mcp_server_debug.py
       "args": [
         "-e",
         "python3",
-        "/mnt/c/prj/AI/prg/mcp-claude-context-continuity/src/claude_cli_server.py"
+        "/mnt/c/path/to/mcp-claude-context-continuity/src/claude_cli_server.py"
       ]
     }
   }
 }
 ```
 
-### Claude Desktop（WSL/Linux/macOS）
-
-`~/.config/Claude/claude_desktop_config.json` に以下を追加：
-
+**WSL/Linux/macOS** (`~/.config/gemini-cli/config.json`):
 ```json
 {
   "mcpServers": {
@@ -79,169 +65,74 @@ python test/test_mcp_server_debug.py
 }
 ```
 
+### Claude Desktop
+
+Claude Desktopの設定ファイルに同様の設定を追加します。
+
 ## 使用方法
 
-Claude Desktop内で以下の8つのツールが利用可能になります：
+### 基本的な使い方
 
-### execute_claude
-基本的なClaude CLI実行。会話の継続性が保たれます：
-```json
-{
-  "tool": "execute_claude",
-  "prompt": "こんにちは、私は山田太郎です"
-}
+1. **通常の会話**:
+```
+execute_claude(prompt="こんにちは、私は山田です")
 ```
 
-### execute_claude_with_context
-ファイルコンテキスト付き実行：
-```json
-{
-  "tool": "execute_claude_with_context",
-  "prompt": "このコードを説明してください",
-  "file_path": "/path/to/code.py"
-}
+2. **会話の継続**:
 ```
-
-### get_execution_history
-実行履歴の取得（デフォルト10件、最大100件）：
-```json
-{
-  "tool": "get_execution_history",
-  "limit": 10
-}
+execute_claude(prompt="私の名前を覚えていますか？")
+→ "はい、山田さんですね"
 ```
-
-### get_current_session
-現在の未使用セッションIDを取得（後で復元するため）：
-```json
-{
-  "tool": "get_current_session"
-}
-```
-**重要**: セッションIDを保存した後は、必ず`reset_session`を実行してください。そうしないと、保存したセッションIDが次の会話で使われてしまいます。ただし、使用済みのセッションIDでもその時点の会話状態に復元可能です。
-
-### set_current_session
-特定のセッションIDを設定して会話を継続：
-```json
-{
-  "tool": "set_current_session",
-  "session_id": "abc123-def456-789"
-}
-```
-**特徴**: 過去のセッションIDを設定することで、その時点の会話内容に戻ることができます。複数の会話を切り替えたり、過去の会話を復元する際に便利です。
-
-### reset_session
-セッションをリセット（会話履歴をクリア）：
-```json
-{
-  "tool": "reset_session"
-}
-```
-
-### clear_execution_history
-実行履歴をクリア：
-```json
-{
-  "tool": "clear_execution_history"
-}
-```
-
-### test_claude_cli
-Claude CLIの動作確認：
-```json
-{
-  "tool": "test_claude_cli"
-}
-```
-
-## 仕組み
-
-### セッション管理の正しい使い方
-
-```
-1. 会話A-1 → セッションID: AAA を返す
-2. 会話A-2（--resume AAA） → セッションID: BBB を返す
-3. get_current_session → BBB を保存
-4. reset_session → 重要！BBBを使わないようにリセット
-5. 会話B-1 → セッションID: XXX を返す
-6. 会話B-2（--resume XXX） → セッションID: YYY を返す
-7. set_current_session(BBB) → 会話Aに戻る
-8. 会話A-3（--resume BBB） → セッションID: CCC を返す
-```
-
-### セッションIDのタイムスタンプ機能（重要）
-
-セッションIDは会話の「タイムスタンプ」として機能し、使用済みのIDでもその時点の会話状態に戻ることができます：
-
-```
-会話の流れ:
-1. 「私は太郎です」 → session_id: AAA
-2. 「好きな食べ物はラーメン」（--resume AAA） → session_id: BBB
-3. 「趣味は読書」（--resume BBB） → session_id: CCC
-
-復元時の動作:
-- set_current_session(AAA) → 太郎の名前のみ知っている状態
-- set_current_session(BBB) → 太郎とラーメンを知っている状態（読書は知らない）
-- set_current_session(CCC) → すべての情報を知っている状態
-```
-
-これにより、会話の任意の時点に戻って別の話題に分岐することが可能です。
 
 ### セッション管理
 
-1. 初回実行時：Claude CLIから `session_id` を取得
-2. 2回目以降：`--resume <session_id>` オプションで会話を継続
-3. これにより、前の会話内容を記憶した状態で対話が可能
-
-例：
+1. **現在のセッションを保存**:
 ```
-1回目: "こんにちは、私は山田太郎です" → session_id: abc123を取得
-2回目: --resume abc123 "私の名前を覚えていますか？" → "はい、山田太郎さんですね"
+session_id = get_current_session()
 ```
 
-### Claude CLI探索
+2. **新しいセッションを開始**:
+```
+reset_session()
+```
 
-**Unix系（Linux/macOS/WSL）:**
-1. `which claude` コマンド
-2. 一般的なインストールパス（npm、yarn、nvm、volta、asdf）
-3. 環境変数 `CLAUDE_PATH`
+3. **保存したセッションに戻る**:
+```
+set_current_session(session_id="保存したID")
+```
 
-**Windows:**
-1. `wsl -- bash -lc "which claude"` でWSL内を探索
-2. 既知のnvmパス
+### 利用可能なツール
 
-### 応答形式
+| ツール | 説明 |
+|--------|------|
+| `execute_claude` | Claude CLIを実行（会話継続） |
+| `execute_claude_with_context` | ファイルコンテキスト付きで実行 |
+| `get_execution_history` | 実行履歴を取得 |
+| `get_current_session` | 現在のセッションIDを取得 |
+| `set_current_session` | セッションIDを設定 |
+| `reset_session` | セッションをリセット |
+| `clear_execution_history` | 履歴をクリア |
+| `test_claude_cli` | 動作確認 |
 
-すべてのツールは統一された形式で応答を返します：
-```json
-{
-  "tool_name": "execute_claude",
-  "success": true,
-  "prompt": "質問内容",
-  "response": "Claudeからの応答",
-  "execution_time": 5.123,
-  "timestamp": "2025-01-08T12:34:56",
-  "error": null
-}
+## セッション管理の仕組み
+
+Claude CLIの`--resume`機能を活用し、セッションIDによって会話の任意の時点に戻ることができます：
+
+```
+会話1「私は太郎です」 → session_id: AAA
+会話2「趣味は読書です」（--resume AAA） → session_id: BBB
+会話3「好きな本は...」（--resume BBB） → session_id: CCC
+
+後から：
+set_current_session("AAA") → "太郎"のみ知っている状態
+set_current_session("BBB") → "太郎"と"読書"を知っている状態
 ```
 
 ## トラブルシューティング
 
-### 実装の特徴
-- 全環境で同期実行（subprocess.run）を使用
-- MCPの1対1通信モデルに最適化
-- Windows、WSL、Linux、macOSで動作確認済み
-- すべての7つのツールが正常に動作することをテスト済み
-- Windows環境での非同期実行問題（10-30倍の遅延）を解決
-
 ### Claude CLIが見つからない場合
 
-1. Claude CLIがインストールされているか確認：
-```bash
-claude --version
-```
-
-2. 環境変数 `CLAUDE_PATH` を設定：
+環境変数`CLAUDE_PATH`を設定：
 ```bash
 export CLAUDE_PATH=/path/to/claude
 ```
@@ -249,65 +140,9 @@ export CLAUDE_PATH=/path/to/claude
 ### Windows環境での注意点
 
 - WSL2が必要です
-- Claude CLIはWSL内にインストールする必要があります
+- Claude CLIはWSL内にインストールしてください
 - ファイルパスはWSL形式（`/mnt/c/...`）で指定
-
-### エンコーディングの問題
-
-Windows環境では、以下の文字がcp932でサポートされていません：
-- 絵文字（😊、🎉など）
-- 一部の音符記号（♫、♬）
-
-回避策：
-- 「絵文字を使って」のような説明的な指示を使用
-- 基本的な日本語と英数字、一般的な記号のみを使用
-
-## 開発
-
-### テスト実行
-
-```bash
-# MCPサーバー動作テスト  
-python test/test_claude_cli_server_simple.py
-
-# デバッグテスト（各ツールを直接実行）
-python test/test_mcp_server_debug.py
-
-# Windows環境テスト
-python test/test_windows_claude_call.py
-
-# エンコーディングテスト
-python test/test_emoji_prompt.py
-
-# 統合テスト（両環境対応）
-# test/unified_test_prompts.txt の内容を実行
-```
-
-### プロジェクト構造
-
-```
-mcp-claude-context-continuity/
-├── src/
-│   └── claude_cli_server.py              # MCPサーバー本体
-├── test/
-│   ├── test_claude_cli_server_simple.py  # 基本動作テスト
-│   ├── test_mcp_server_debug.py          # デバッグテスト
-│   ├── test_windows_*.py                 # Windows環境テスト
-│   ├── test_emoji_prompt.py              # エンコーディングテスト
-│   └── *_test_prompts.txt                # テストプロンプト集
-├── setting/
-│   ├── claude_cli_mcp_config_windows.json
-│   └── claude_cli_mcp_config_wsl.json
-├── claude_command_debug.log              # デバッグログ
-├── CLAUDE.md                             # Claude Code用ガイド
-├── README.md                             # このファイル
-└── requirements.txt                      # Python依存関係
-```
 
 ## ライセンス
 
 MIT License
-
-## 貢献
-
-プルリクエストを歓迎します。大きな変更の場合は、まずissueを作成して変更内容を議論してください。

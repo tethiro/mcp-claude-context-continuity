@@ -158,7 +158,8 @@ class ClaudeSessionManager:
             pass
         
         # 2. よくあるnvmのパスを試す
-        nvm_paths = ["/home/tethiro/.nvm/versions/node/v22.17.0/bin/claude"]
+        # 一般的なnvmパスの例
+        nvm_paths = []
         
         # WSL内のユーザー名を取得して動的にパスを生成
         try:

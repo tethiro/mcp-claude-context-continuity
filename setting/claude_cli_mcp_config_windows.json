@@ -5,10 +5,10 @@
       "args": [
         "-e",
         "python3",
-        "/mnt/c/prj/AI/prg/mcp-claude-context-continuity/src/claude_cli_server.py"
+        "/mnt/c/path/to/mcp-claude-context-continuity/src/claude_cli_server.py"
       ],
       "env": {
-        "PYTHONPATH": "/mnt/c/prj/AI/prg/mcp-claude-context-continuity"
+        "PYTHONPATH": "/mnt/c/path/to/mcp-claude-context-continuity"
       }
     }
   }
