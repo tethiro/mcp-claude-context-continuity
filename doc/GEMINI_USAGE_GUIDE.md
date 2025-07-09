@@ -6,8 +6,8 @@
 
 ### 1. 設定ファイルの場所
 
-- **Windows**: `%APPDATA%\gemini-cli\config.json`
-- **WSL/Linux/macOS**: `~/.config/gemini-cli/config.json`
+- **Windows**: `%USERPROFILE%\.gemini\settings.json`
+- **WSL/Linux/macOS**: `~/.gemini/settings.json`
 
 ### 2. 設定例
 

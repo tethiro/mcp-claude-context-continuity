@@ -35,7 +35,7 @@ pip install -r requirements.txt
 
 Geminiの設定ファイルに以下を追加：
 
-**Windows環境** (`%APPDATA%\gemini-cli\config.json`):
+**Windows環境** (`%USERPROFILE%\.gemini\settings.json`):
 ```json
 {
   "mcpServers": {
@@ -51,7 +51,7 @@ Geminiの設定ファイルに以下を追加：
 }
 ```
 
-**WSL/Linux/macOS** (`~/.config/gemini-cli/config.json`):
+**WSL/Linux/macOS** (`~/.gemini/settings.json`):
 ```json
 {
   "mcpServers": {
