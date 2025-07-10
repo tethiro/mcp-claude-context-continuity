@@ -2,6 +2,19 @@
 
 MCP Claude Context Continuity プロジェクトの技術仕様書
 
+## 重要な動作原理
+
+### MCPサーバーの実行環境
+**最重要**: MCPサーバーは常にホストOSのPythonで実行されます
+- Windows環境: Windows版Python（`python.exe`）で実行
+- WSL/Linux/macOS環境: ネイティブPythonで実行
+
+### Claude CLIの実行環境
+- Windows環境: WSL経由で実行（MCPサーバーから`wsl --`経由で呼び出し）
+- WSL/Linux/macOS環境: 直接実行
+
+この違いを理解することは、正しい設定と動作のために極めて重要です。
+
 ## プロジェクト概要
 Claude CLIの会話コンテキストを保持するMCP（Model Context Protocol）サーバー
 
@@ -12,6 +25,43 @@ Claude CLIの会話コンテキストを保持するMCP（Model Context Protocol
 - 非同期処理 (asyncio) - MCPフレームワークで使用
 
 ## アーキテクチャ
+
+### MCPサーバープロセスモデル
+MCPサーバーの実行環境とプロセス管理に関する重要な仕様：
+
+#### プロセスライフサイクル
+- **常駐プロセス**: MCPサーバーはGeminiセッション中は常駐プロセスとして動作
+- **独立性**: 各Geminiインスタンスが独自のMCPサーバープロセスを起動
+- **状態管理**: セッション状態は各プロセスのメモリ内で保持
+- **並行実行**: 複数のGeminiインスタンスが同時に実行可能（相互干渉なし）
+
+#### 実行環境の重要な違い
+- **MCPサーバー自体の実行環境**:
+  - Windows: Windows版Pythonで直接実行
+  - WSL/Linux/macOS: ネイティブPythonで直接実行
+  - **重要**: MCPサーバーは常にホストOSのPythonインタープリターで実行される
+
+- **Claude CLIの実行環境**:
+  - Windows: WSL経由で実行（`["wsl", "--", "/path/to/claude"]`）
+  - WSL/Linux/macOS: 直接実行（`"/path/to/claude"`）
+  - **重要**: Claude CLIは常にWSL/Linux環境内で実行される
+
+#### プロセス間の関係
+```
+Windows環境の例:
+Gemini → Windows Python → MCP Server Process
+                         ↓
+                    subprocess.run()
+                         ↓
+                    WSL → Claude CLI
+
+WSL/Linux環境の例:
+Gemini → Native Python → MCP Server Process
+                        ↓
+                   subprocess.run()
+                        ↓
+                   Claude CLI (直接)
+```
 
 ### コア実装
 単一ファイル `src/claude_cli_server.py` にすべての機能を実装
@@ -97,15 +147,41 @@ mcp-claude-context-continuity/
 - ファイルコンテキスト付き: 12-15秒
 - 即時応答（履歴取得等）: 1秒未満
 
+## メモリ内状態管理
+
+### 保持される状態
+MCPサーバープロセスは以下の状態をメモリ内で管理：
+
+1. **現在のセッションID** (`current_session_id`)
+   - 未使用のセッションID（次回の`--resume`で使用可能）
+   - `reset_session()`で新規生成
+
+2. **実行履歴** (`execution_history`)
+   - 最大100件の実行ログを保持
+   - 各エントリには実行時刻、プロンプト、レスポンス、セッションIDを記録
+
+3. **Claude CLIパス** (`claude_cli_path`)
+   - 初回検出時にキャッシュ
+   - プロセス終了まで再利用
+
+### 状態の永続性
+- **プロセス内**: すべての状態はプロセス存続中は保持される
+- **プロセス間**: 各Geminiインスタンスは独立した状態を持つ
+- **永続化なし**: プロセス終了時にすべての状態は失われる
+
 ## 制限事項
 1. 並列実行は不可（セッション継続性保持のため）
 2. 履歴は最新100件まで（メモリ内保持）
 3. Windows環境では一部の特殊文字（絵文字等）に制限
+4. プロセス終了時にセッション状態は失われる（永続化なし）
 
 ## 設定例
 
 ### Windows環境
+**重要**: Windows環境では、MCPサーバーはWindows版Pythonで実行されます。以下は誤った設定例です。
+
 ```json
+// ❌ 誤った設定 - WSL経由でMCPサーバーを起動しようとしている
 {
   "mcpServers": {
     "claude-cli-server": {
@@ -114,6 +190,21 @@ mcp-claude-context-continuity/
         "-e",
         "python3",
         "/mnt/c/path/to/src/claude_cli_server.py"
+      ]
+    }
+  }
+}
+```
+
+**正しい設定**:
+```json
+// ✅ 正しい設定 - Windows版Pythonで直接実行
+{
+  "mcpServers": {
+    "claude-cli-server": {
+      "command": "python",
+      "args": [
+        "C:\\path\\to\\src\\claude_cli_server.py"
       ]
     }
   }
